@@ -5,6 +5,39 @@ import torch.nn.functional as F
 import modules
 
 
+class TitaNet(nn.Module):
+    def __init__(
+        self,
+        n_mels,
+        n_mega_blocks,
+        n_sub_blocks,
+        encoder_size,
+        mega_block_kernel_size,
+        attention_hidden_size,
+        embedding_size=192,
+        prolog_kernel_size=3,
+        epilog_kernel_size=1,
+        se_reduction=16,
+        dropout=0.5,
+    ):
+        self.encoder = Encoder(
+            n_mels,
+            n_mega_blocks,
+            n_sub_blocks,
+            encoder_size,
+            mega_block_kernel_size,
+            prolog_kernel_size=prolog_kernel_size,
+            epilog_kernel_size=epilog_kernel_size,
+            se_reduction=se_reduction,
+            dropout=dropout,
+        )
+        self.decoder = Decoder(encoder_size, attention_hidden_size, embedding_size)
+
+    def forward(self, spectrograms):
+        encodings = self.encoder(spectrograms)
+        return self.decoder(encodings)
+
+
 class Encoder(nn.Module):
     def __init__(
         self,
@@ -15,6 +48,7 @@ class Encoder(nn.Module):
         mega_block_kernel_size,
         prolog_kernel_size=3,
         epilog_kernel_size=1,
+        se_reduction=16,
         dropout=0.5,
     ):
         super(Encoder, self).__init__()
@@ -26,6 +60,7 @@ class Encoder(nn.Module):
                     output_size,
                     mega_block_kernel_size,
                     n_sub_blocks,
+                    se_reduction=se_reduction,
                     dropout=dropout,
                 )
                 for _ in range(n_mega_blocks)
@@ -46,8 +81,8 @@ class MegaBlock(nn.Module):
         output_size,
         kernel_size,
         n_sub_blocks,
-        dropout=0.5,
         se_reduction=16,
+        dropout=0.5,
     ):
         super(MegaBlock, self).__init__()
 
