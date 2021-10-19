@@ -3,6 +3,29 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+class Conv1dSamePadding(nn.Conv1d):
+    """
+    1D convolutional layer with "same" padding (no downsampling),
+    that is also compatible with strides > 1
+    """
+
+    def __init__(self, *args, **kwargs):
+        super(Conv1dSamePadding, self).__init__(*args, **kwargs)
+
+    def forward(self, input):
+        padding = (
+            self.stride[0] * (input.shape[-1] - 1)
+            - input.shape[-1]
+            + self.kernel_size[0]
+            + (self.dilation[0] - 1) * (self.kernel_size[0] - 1)
+        ) // 2
+        return self._conv_forward(
+            F.pad(input, (padding, padding)),
+            self.weight,
+            self.bias,
+        )
+
+
 class DepthwiseConv1d(nn.Module):
     def __init__(
         self,
@@ -35,29 +58,6 @@ class DepthwiseConv1d(nn.Module):
 
     def forward(self, x):
         return self.conv(x)
-
-
-class Conv1dSamePadding(nn.Conv1d):
-    """
-    1D convolutional layer with "same" padding (no downsampling),
-    that is also compatible with strides > 1
-    """
-
-    def __init__(self, *args, **kwargs):
-        super(Conv1dSamePadding, self).__init__(*args, **kwargs)
-
-    def forward(self, input):
-        padding = (
-            self.stride[0] * (input.shape[-1] - 1)
-            - input.shape[-1]
-            + self.kernel_size[0]
-            + (self.dilation[0] - 1) * (self.kernel_size[0] - 1)
-        ) // 2
-        return self._conv_forward(
-            F.pad(input, (padding, padding)),
-            self.weight,
-            self.bias,
-        )
 
 
 class ConvBlock1d(nn.Module):
@@ -105,18 +105,17 @@ class ConvBlock1d(nn.Module):
 
 
 class SqueezeExcitation(nn.Module):
-    def __init__(self, c, r=16):
+    def __init__(self, channels, reduction=16):
         super().__init__()
-        self.squeeze = nn.AdaptiveAvgPool2d(1)
+        self.squeeze = nn.AdaptiveAvgPool1d(1)
         self.excitation = nn.Sequential(
-            nn.Linear(c, c // r, bias=False),
-            nn.ReLU(inplace=True),
-            nn.Linear(c // r, c, bias=False),
+            nn.Linear(channels, channels // reduction, bias=False),
+            nn.ReLU(),
+            nn.Linear(channels // reduction, channels, bias=False),
             nn.Sigmoid(),
         )
 
     def forward(self, x):
-        bs, c, _, _ = x.shape
-        y = self.squeeze(x).view(bs, c)
-        y = self.excitation(y).view(bs, c, 1, 1)
-        return x * y.expand_as(x)
+        s = self.squeeze(x).squeeze(-1)
+        e = self.excitation(s).unsqueeze(-1)
+        return x * e.expand_as(x)

@@ -11,19 +11,19 @@ class Encoder(nn.Module):
         n_mels,
         n_mega_blocks,
         n_sub_blocks,
-        channels,
+        output_size,
         mega_block_kernel_size,
         prolog_kernel_size=3,
         epilog_kernel_size=1,
         dropout=0.5,
     ):
         super(Encoder, self).__init__()
-        self.prolog = modules.ConvBlock1d(n_mels, channels, prolog_kernel_size)
+        self.prolog = modules.ConvBlock1d(n_mels, output_size, prolog_kernel_size)
         self.mega_blocks = nn.Sequential(
             *[
                 MegaBlock(
-                    channels,
-                    channels,
+                    output_size,
+                    output_size,
                     mega_block_kernel_size,
                     n_sub_blocks,
                     dropout=dropout,
@@ -31,7 +31,7 @@ class Encoder(nn.Module):
                 for _ in range(n_mega_blocks)
             ]
         )
-        self.epilog = modules.ConvBlock1d(channels, channels, epilog_kernel_size)
+        self.epilog = modules.ConvBlock1d(output_size, output_size, epilog_kernel_size)
 
     def forward(self, x):
         x = self.prolog(x)
@@ -40,12 +40,20 @@ class Encoder(nn.Module):
 
 
 class MegaBlock(nn.Module):
-    def __init__(self, input_size, channels, kernel_size, n_sub_blocks, dropout=0.5):
+    def __init__(
+        self,
+        input_size,
+        output_size,
+        kernel_size,
+        n_sub_blocks,
+        dropout=0.5,
+        se_reduction=16,
+    ):
         super(MegaBlock, self).__init__()
 
         self.dropout = dropout
 
-        channels = [input_size] + [channels] * n_sub_blocks
+        channels = [input_size] + [output_size] * n_sub_blocks
         self.sub_blocks = nn.Sequential(
             *[
                 modules.ConvBlock1d(
@@ -58,12 +66,12 @@ class MegaBlock(nn.Module):
                 )
                 for in_channels, out_channels in zip(channels[:-1], channels[1:])
             ],
-            modules.SqueezeExcitation()
+            modules.SqueezeExcitation(output_size, reduction=se_reduction)
         )
 
         self.skip_connection = nn.Sequential(
-            nn.Conv1d(input_size, channels, kernel_size=1),
-            nn.BatchNorm1d(channels),
+            nn.Conv1d(input_size, output_size, kernel_size=1),
+            nn.BatchNorm1d(output_size),
         )
 
     def forward(self, x):
