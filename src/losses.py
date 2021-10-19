@@ -3,16 +3,31 @@ import torch.nn.functional as F
 import torch.nn as nn
 
 
-class CELoss(nn.Module):
+class MetricLearningLoss(nn.Module):
+    """
+    Generic loss function to be used in a metric learning setting
+    """
+
+    def __init__(self, embedding_size, n_classes):
+        super(MetricLearningLoss, self).__init__()
+        self.embedding_size = embedding_size
+        self.n_classes = n_classes
+
+    def forward(self, inputs, targets):
+        raise NotImplementedError()
+
+
+class CELoss(MetricLearningLoss):
     """
     Cross-entropy loss with the addition of a linear layer
     to map inputs to the target number of classes
     """
 
     def __init__(self, embedding_size, n_classes):
+        super(CELoss, self).__init__(embedding_size, n_classes)
         self.fc = nn.Linear(embedding_size, n_classes)
 
-    def forward(self, x, y):
+    def forward(self, inputs, targets):
         """
         Compute cross-entropy loss for inputs of shape
         [B, E] and targets of size [B]
@@ -20,10 +35,10 @@ class CELoss(nn.Module):
         B: batch size
         E: embedding size
         """
-        return F.cross_entropy(self.fc(x), y)
+        return F.cross_entropy(self.fc(inputs), targets)
 
 
-class ArcFaceLoss(nn.Module):
+class ArcFaceLoss(MetricLearningLoss):
     """
     Compute the additive angular margin loss
 
@@ -34,6 +49,7 @@ class ArcFaceLoss(nn.Module):
     def __init__(
         self, embedding_size, n_classes, normalize_input=True, scale=64, margin=0.5
     ):
+        super(ArcFaceLoss, self).__init__(embedding_size, n_classes)
         self.fc = nn.Linear(embedding_size, n_classes, bias=False)
         self.normalize_input = normalize_input
         self.scale = scale
@@ -70,3 +86,6 @@ class ArcFaceLoss(nn.Module):
 
         # Rely on standard cross-entropy using modified logits
         return F.cross_entropy(logits, targets)
+
+
+LOSSES = {"ce": CELoss, "aam": ArcFaceLoss}

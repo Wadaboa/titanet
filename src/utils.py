@@ -1,4 +1,5 @@
 import random
+import datetime
 
 import torch
 import numpy as np
@@ -152,3 +153,17 @@ def to_numpy(arr):
     elif isinstance(arr, torch.Tensor):
         return arr.detach().cpu().numpy()
     return None
+
+
+def now():
+    """
+    Returns the current date and time
+    """
+    return datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+
+def get_device():
+    """
+    Return a CUDA device, if available, or a standard CPU device otherwise
+    """
+    return torch.device("cuda:0" if torch.cuda.is_available() else "cpu")

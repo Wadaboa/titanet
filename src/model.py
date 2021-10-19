@@ -1,11 +1,15 @@
+from functools import partial
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import modules
+import modules, losses
 
 
-def get_titanet(n_mels=80, n_mega_blocks=5, model_size="s"):
+def get_titanet(
+    loss_function, n_mels=80, n_mega_blocks=5, model_size="s", device="cpu"
+):
     """
     Return one of the three TitaNet instances described in the paper,
     i.e. TitaNet-S, TitaNet-M or TitaNet-L
@@ -15,36 +19,29 @@ def get_titanet(n_mels=80, n_mega_blocks=5, model_size="s"):
         "m",
         "l",
     ), "Unsupported model size"
+    assert isinstance(
+        loss_function, losses.MetricLearningLoss
+    ), "Unsupported loss function"
+
+    # Assign parameters common to all model sizes
+    titanet = partial(
+        TitaNet,
+        n_mels=n_mels,
+        n_mega_blocks=n_mega_blocks,
+        loss_function=loss_function,
+        n_sub_blocks=3,
+        encoder_output_size=1536,
+        embedding_size=192,
+        device=device,
+    )
+
+    # Return the selected model size
     if model_size.lower() == "s":
-        return TitaNet(
-            n_mels,
-            n_mega_blocks,
-            n_sub_blocks=3,
-            encoder_hidden_size=256,
-            encoder_output_size=1536,
-            embedding_size=192,
-            mega_block_kernel_size=3,
-        )
+        return titanet(encoder_hidden_size=256, mega_block_kernel_size=3)
     elif model_size.lower() == "m":
-        return TitaNet(
-            n_mels,
-            n_mega_blocks,
-            n_sub_blocks=3,
-            encoder_hidden_size=512,
-            encoder_output_size=1536,
-            embedding_size=192,
-            mega_block_kernel_size=7,
-        )
+        return titanet(encoder_hidden_size=512, mega_block_kernel_size=7)
     elif model_size.lower() == "l":
-        return TitaNet(
-            n_mels,
-            n_mega_blocks,
-            n_sub_blocks=3,
-            encoder_hidden_size=1024,
-            encoder_output_size=1536,
-            embedding_size=192,
-            mega_block_kernel_size=11,
-        )
+        return titanet(encoder_hidden_size=1024, mega_block_kernel_size=11)
 
 
 class TitaNet(nn.Module):
@@ -62,6 +59,7 @@ class TitaNet(nn.Module):
         self,
         n_mels,
         n_mega_blocks,
+        loss_function,
         n_sub_blocks,
         encoder_hidden_size,
         encoder_output_size,
@@ -71,6 +69,7 @@ class TitaNet(nn.Module):
         epilog_kernel_size=1,
         se_reduction=16,
         dropout=0.5,
+        device="cpu",
     ):
         super(TitaNet, self).__init__()
 
@@ -89,7 +88,13 @@ class TitaNet(nn.Module):
         )
         self.decoder = Decoder(encoder_output_size, embedding_size)
 
-    def forward(self, spectrograms):
+        # Store loss function
+        self.loss_function = loss_function
+
+        # Transfer to device
+        self.to(device)
+
+    def forward(self, spectrograms, speakers=None):
         """
         Given input spectrograms of shape [B, M, T], TitaNet returns
         utterance-level embeddings of shape [B, E]
@@ -100,7 +105,10 @@ class TitaNet(nn.Module):
         E: embedding size
         """
         encodings = self.encoder(spectrograms)
-        return self.decoder(encodings)
+        embeddings = self.decoder(encodings)
+        if speakers is None:
+            return embeddings
+        return self.loss_function(embeddings, speakers)
 
 
 class Encoder(nn.Module):
