@@ -10,6 +10,7 @@ training:
   batch_size: 64
   epochs: 250
   loss: "ce"
+  val_every: 5 # epochs
 
 loss:
   aam:
@@ -39,7 +40,7 @@ audio:
     hop_length: 10 # ms
     n_mels: 80
   augmentation:
-    rir_corpora_path: "./data/RIRS_NOISES"
+    rir_corpora_path: "./data/rirs"
     max_length: 3 # s
     chunk_lengths:
       - 1.5

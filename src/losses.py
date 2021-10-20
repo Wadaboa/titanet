@@ -8,7 +8,7 @@ class MetricLearningLoss(nn.Module):
     Generic loss function to be used in a metric learning setting
     """
 
-    def __init__(self, embedding_size, n_classes):
+    def __init__(self, embedding_size, n_classes, *args, **kwargs):
         super(MetricLearningLoss, self).__init__()
         self.embedding_size = embedding_size
         self.n_classes = n_classes
@@ -35,7 +35,10 @@ class CELoss(MetricLearningLoss):
         B: batch size
         E: embedding size
         """
-        return F.cross_entropy(self.fc(inputs), targets)
+        logits = self.fc(inputs)
+        preds = torch.argmax(logits, dim=1)
+        loss = F.cross_entropy(logits, targets)
+        return preds, loss
 
 
 class ArcFaceLoss(MetricLearningLoss):
@@ -83,9 +86,12 @@ class ArcFaceLoss(MetricLearningLoss):
         # after adding penalties, as if they were the output
         # of the last linear layer
         logits = self.scale * torch.cos(angles + self.margin)
+        preds = torch.argmax(logits, dim=1)
 
         # Rely on standard cross-entropy using modified logits
-        return F.cross_entropy(logits, targets)
+        loss = F.cross_entropy(logits, targets)
+
+        return preds, loss
 
 
 LOSSES = {"ce": CELoss, "aam": ArcFaceLoss}

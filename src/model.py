@@ -8,7 +8,12 @@ import modules, losses
 
 
 def get_titanet(
-    loss_function, n_mels=80, n_mega_blocks=5, model_size="s", device="cpu"
+    loss_function,
+    embedding_size=192,
+    n_mels=80,
+    n_mega_blocks=5,
+    model_size="s",
+    device="cpu",
 ):
     """
     Return one of the three TitaNet instances described in the paper,
@@ -31,7 +36,7 @@ def get_titanet(
         loss_function=loss_function,
         n_sub_blocks=3,
         encoder_output_size=1536,
-        embedding_size=192,
+        embedding_size=embedding_size,
         device=device,
     )
 

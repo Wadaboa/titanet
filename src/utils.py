@@ -1,14 +1,24 @@
 import random
 import datetime
+import os
+from pandas.core import api
 
 import torch
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import IPython.display as ipd
+import wandb
 from sklearn.manifold import TSNE
 from sklearn.decomposition import TruncatedSVD
 from scipy.spatial import ConvexHull
 from scipy import interpolate
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+)
 
 
 class Struct:
@@ -179,6 +189,21 @@ def plot_spectrogram(spectrogram, figsize=(12, 3)):
     plt.show()
 
 
+def play_audio(waveform, sample_rate):
+    """
+    Spawn an audio player in a Jupyter notebook,
+    to listen to the given waveform
+    """
+    waveform = to_numpy(waveform)
+    num_channels, _ = waveform.shape
+    if num_channels == 1:
+        ipd.display(ipd.Audio(waveform[0], rate=sample_rate))
+    elif num_channels == 2:
+        ipd.display(ipd.Audio((waveform[0], waveform[1]), rate=sample_rate))
+    else:
+        raise ValueError("Waveform with more than 2 channels are not supported")
+
+
 def to_numpy(arr):
     """
     Convert the given array to the numpy format
@@ -202,3 +227,51 @@ def get_device():
     Return a CUDA device, if available, or a standard CPU device otherwise
     """
     return torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+
+def flatten(arr):
+    """
+    Flatten the given 2D array
+    """
+    return [item for sublist in arr for item in sublist]
+
+
+def set_seed(seed):
+    """
+    Fix all possible sources of randomness
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+
+
+def get_metrics(y_true, y_pred, prefix=None):
+    """
+    Return a dictionary of classification metrics
+    """
+    metrics = {
+        "accuracy": accuracy_score(y_true, y_pred),
+        "precision": precision_score(y_true, y_pred, average="macro"),
+        "recall": recall_score(y_true, y_pred, average="macro"),
+        "f1": f1_score(y_true, y_pred, average="macro"),
+    }
+    if prefix is not None:
+        metrics = {f"{prefix}/{k}": v for k, v in metrics.items()}
+    return metrics
+
+
+def init_wandb(api_key_file, project, entity, **kwargs):
+    """
+    Return a new W&B run to be used for logging purposes
+    """
+    assert os.path.exists(api_key_file), "The given W&B API key file does not exist"
+    api_key_value = open(api_key_file, "r").read().strip()
+    os.environ["WANDB_API_KEY"] = api_key_value
+    return wandb.init(
+        project=project,
+        entity=entity,
+        config=kwargs,
+    )

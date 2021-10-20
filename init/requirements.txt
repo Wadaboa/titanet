@@ -11,3 +11,4 @@ scikit-learn==1.0
 seaborn==0.11.2
 wandb==0.12.4
 jupyter==1.0.0
+requests==2.26.0

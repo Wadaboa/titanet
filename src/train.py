@@ -191,6 +191,15 @@ def train(params):
         optimizer, T_max=len(train_dataloader) * params.training.epochs
     )
 
+    # Start wandb logging
+    wandb_run = None
+    if params.wandb.enabled:
+        wandb_run = utils.init_wandb(
+            params.wandb.api_key_file,
+            params.wandb.project,
+            params.wandb.entity,
+        )
+
     # Perform training loop
     learn.training_loop(
         params.training.epochs,
@@ -201,8 +210,12 @@ def train(params):
         params.training.checkpoints_path,
         lr_scheduler=lr_scheduler,
         checkpoints_frequency=params.training.checkpoints_frequency,
-        wandb_enabled=params.wandb.enabled,
+        wandb_run=wandb_run,
     )
+
+    # Stop wandb logging
+    if params.wandb.enabled:
+        wandb_run.finish()
 
 
 if __name__ == "__main__":
