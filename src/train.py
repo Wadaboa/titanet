@@ -1,3 +1,4 @@
+import sys
 from argparse import ArgumentParser
 
 import torch
@@ -8,6 +9,27 @@ import numpy as np
 import yaml
 
 import datasets, transforms, model, learn, losses, utils
+
+
+def get_simple_transforms(
+    sample_rate=16000,
+    n_fft=512,
+    win_length=25,
+    hop_length=10,
+    n_mels=80,
+):
+    """
+    Return only the mel-spectrogram transform
+    """
+    return [
+        transforms.NormalizedMelSpectrogram(
+            sample_rate,
+            n_fft=n_fft,
+            win_length=int(win_length / 1000 * sample_rate),
+            hop_length=int(hop_length / 1000 * sample_rate),
+            n_mels=n_mels,
+        )
+    ]
 
 
 def get_transforms(
@@ -137,19 +159,31 @@ def train(params):
     """
     Training loop entry-point
     """
+    # Set random seed for reproducibility
+    utils.set_seed(params.generic.seed)
+
     # Get data transformations
-    transforms = get_transforms(
-        params.audio.augmentation.rir_corpora_path,
-        max_length=params.audio.augmentation.max_length,
-        chunk_lengths=params.audio.augmentation.chunk_lengths,
-        min_speed=params.audio.augmentation.min_speed,
-        max_speed=params.audio.augmentation.max_speed,
-        sample_rate=params.audio.sample_rate,
-        n_fft=params.audio.spectrogram.n_fft,
-        win_length=params.audio.spectrogram.win_length,
-        hop_length=params.audio.spectrogram.hop_length,
-        n_mels=params.audio.spectrogram.n_mels,
-    )
+    if params.audio.augmentation.enabled:
+        transforms = get_transforms(
+            params.audio.augmentation.rir_corpora_path,
+            max_length=params.audio.augmentation.max_length,
+            chunk_lengths=params.audio.augmentation.chunk_lengths,
+            min_speed=params.audio.augmentation.min_speed,
+            max_speed=params.audio.augmentation.max_speed,
+            sample_rate=params.audio.sample_rate,
+            n_fft=params.audio.spectrogram.n_fft,
+            win_length=params.audio.spectrogram.win_length,
+            hop_length=params.audio.spectrogram.hop_length,
+            n_mels=params.audio.spectrogram.n_mels,
+        )
+    else:
+        transforms = get_simple_transforms(
+            sample_rate=params.audio.sample_rate,
+            n_fft=params.audio.spectrogram.n_fft,
+            win_length=params.audio.spectrogram.win_length,
+            hop_length=params.audio.spectrogram.hop_length,
+            n_mels=params.audio.spectrogram.n_mels,
+        )
 
     # Get datasets and dataloaders
     train_dataset, val_dataset, test_dataset, n_speakers = get_datasets(
@@ -187,9 +221,11 @@ def train(params):
 
     # Get optimizer and scheduler
     optimizer = optim.SGD(titanet.parameters(), lr=params.training.learning_rate)
-    lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=len(train_dataloader) * params.training.epochs
-    )
+    lr_scheduler = None
+    if params.training.lr_scheduler:
+        lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=len(train_dataloader) * params.training.epochs
+        )
 
     # Start wandb logging
     wandb_run = None
@@ -198,6 +234,7 @@ def train(params):
             params.wandb.api_key_file,
             params.wandb.project,
             params.wandb.entity,
+            config=params.entries,
         )
 
     # Perform training loop
@@ -208,6 +245,7 @@ def train(params):
         train_dataloader,
         val_dataloader,
         params.training.checkpoints_path,
+        params.training.val_every,
         lr_scheduler=lr_scheduler,
         checkpoints_frequency=params.training.checkpoints_frequency,
         wandb_run=wandb_run,

@@ -3,6 +3,7 @@ dataset:
 
 training:
   learning_rate: 0.08
+  lr_scheduler: false
   checkpoints_path: "./checkpoints"
   checkpoints_frequency: 5 # epochs
   train_fraction: 0.8
@@ -23,7 +24,7 @@ titanet:
   n_mega_blocks: 5
 
 wandb:
-  enabled: true
+  enabled: false
   entity: "wadaboa"
   project: "titanet"
   api_key_file: "./init/wandb_api_key_file"
@@ -40,6 +41,7 @@ audio:
     hop_length: 10 # ms
     n_mels: 80
   augmentation:
+    enabled: false
     rir_corpora_path: "./data/rirs"
     max_length: 3 # s
     chunk_lengths:

@@ -1,16 +1,59 @@
 import os
 import time
-import datetime
 import math
 import sys
 
 import torch
-import wandb
+from rich.console import Console
+from rich.table import Table
 
 import utils
 
 
-def train_one_epoch(model, optimizer, dataloader):
+# Rich console
+CONSOLE = Console()
+
+
+def log_step(
+    current_epoch, total_epochs, current_step, total_steps, loss, time, val=False
+):
+    """
+    Log metrics to the console after a forward pass
+    """
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Split")
+    table.add_column("Epoch")
+    table.add_column("Step")
+    table.add_column("Loss")
+    table.add_column("Time")
+    table.add_row(
+        "Training" if not val else "Validation",
+        f"{current_epoch} / {total_epochs}",
+        f"{current_step} / {total_steps}",
+        f"{loss}",
+        f"{round(time, 2)} s",
+    )
+    CONSOLE.print(table)
+
+
+def log_epoch(current_epoch, total_epochs, metrics, val=False):
+    """
+    Log metrics to the console after an epoch
+    """
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Split")
+    table.add_column("Epoch")
+    for k in metrics:
+        table.add_column(k.capitalize())
+    table.add_row(
+        "Training" if not val else "Validation",
+        f"{current_epoch} / {total_epochs}",
+        *tuple(metrics.values()),
+    )
+    CONSOLE.print(table)
+
+
+def train_one_epoch(current_epoch, total_epochs, model, optimizer, dataloader):
     """
     Train the given model for one epoch with the given dataloader and optimizer
     """
@@ -20,12 +63,23 @@ def train_one_epoch(model, optimizer, dataloader):
     # For each batch
     epoch_loss, epoch_time = 0, 0
     epoch_preds, epoch_targets = [], []
-    for spectrograms, _, speakers in dataloader:
+    for step, (spectrograms, _, speakers) in enumerate(dataloader):
 
-        # Forward pass
+        # Get model outputs
         model_time = time.time()
         preds, loss = model(spectrograms, speakers=speakers)
         model_time = time.time() - model_time
+
+        # Log to console
+        log_step(
+            current_epoch,
+            total_epochs,
+            step,
+            len(dataloader),
+            loss,
+            model_time,
+            val=False,
+        )
 
         # Store epoch info
         epoch_loss += loss
@@ -51,7 +105,7 @@ def train_one_epoch(model, optimizer, dataloader):
 
 
 def save_checkpoint(
-    epoch, checkpoints_path, model, optimizer, lr_scheduler=None, wandb_enabled=False
+    epoch, checkpoints_path, model, optimizer, lr_scheduler=None, wandb_run=None
 ):
     """
     Save the current state of the model, optimizer and learning rate scheduler,
@@ -70,8 +124,8 @@ def save_checkpoint(
     # Save state dictionary
     checkpoint_file = os.path.join(checkpoints_path, f"{utils.now()}_{epoch}.pth")
     torch.save(state_dict, checkpoint_file)
-    if wandb_enabled:
-        wandb.save(checkpoint_file)
+    if wandb_run is not None:
+        wandb_run.save(checkpoint_file)
 
 
 def training_loop(
@@ -90,16 +144,18 @@ def training_loop(
     Standard training loop function: train and evaluate
     after each training epoch
     """
-    # Track execution time
-    start_time = time.time()
-
     # For each epoch
     for epoch in range(1, epochs + 1):
 
         # Train for one epoch and log metrics to wandb
-        train_metrics = train_one_epoch(model, optimizer, train_dataloader)
+        train_metrics = train_one_epoch(
+            epoch, epochs, model, optimizer, train_dataloader
+        )
         if wandb_run is not None:
             wandb_run.log(train_metrics, step=epoch)
+
+        # Log to console
+        log_epoch(epoch, epochs, train_metrics, val=False)
 
         # Decay the learning rate
         if lr_scheduler is not None:
@@ -108,27 +164,36 @@ def training_loop(
         # Save checkpoints once in a while
         if checkpoints_frequency is not None and epoch % checkpoints_frequency == 0:
             save_checkpoint(
-                epoch, checkpoints_path, model, optimizer, lr_scheduler=lr_scheduler
+                epoch,
+                checkpoints_path,
+                model,
+                optimizer,
+                lr_scheduler=lr_scheduler,
+                wandb_run=wandb_run,
             )
 
         # Evaluate once in a while (always evaluate at the first and last epochs)
         if epoch % val_every == 0 or epoch == 1 or epoch == epochs:
-            val_metrics = evaluate(model, val_dataloader)
+            val_metrics = evaluate(epoch, epochs, model, val_dataloader)
             if wandb_run is not None:
                 wandb_run.log(val_metrics, step=epoch)
 
+            # Log to console
+            log_epoch(epoch, epochs, val_metrics, val=True)
+
     # Always save the last checkpoint
     save_checkpoint(
-        epochs, checkpoints_path, model, optimizer, lr_scheduler=lr_scheduler
+        epochs,
+        checkpoints_path,
+        model,
+        optimizer,
+        lr_scheduler=lr_scheduler,
+        wandb_run=wandb_run,
     )
-
-    total_time = time.time() - start_time
-    total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-    print(f"Training time {total_time_str}")
 
 
 @torch.no_grad()
-def evaluate(model, dataloader):
+def evaluate(current_epoch, total_epochs, model, dataloader):
     """
     Evaluate the given model for one epoch with the given dataloader
     """
@@ -138,12 +203,23 @@ def evaluate(model, dataloader):
     # For each batch
     epoch_loss, epoch_time = 0, 0
     epoch_preds, epoch_targets = [], []
-    for spectrograms, _, speakers in dataloader:
+    for step, (spectrograms, _, speakers) in enumerate(dataloader):
 
         # Get model outputs
         model_time = time.time()
         preds, loss = model(spectrograms, speakers=speakers)
         model_time = time.time() - model_time
+
+        # Log to console
+        log_step(
+            current_epoch,
+            total_epochs,
+            step,
+            len(dataloader),
+            loss,
+            model_time,
+            val=True,
+        )
 
         # Store epoch info
         epoch_loss += loss

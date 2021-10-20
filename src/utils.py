@@ -263,7 +263,7 @@ def get_metrics(y_true, y_pred, prefix=None):
     return metrics
 
 
-def init_wandb(api_key_file, project, entity, **kwargs):
+def init_wandb(api_key_file, project, entity, config=None):
     """
     Return a new W&B run to be used for logging purposes
     """
@@ -273,5 +273,5 @@ def init_wandb(api_key_file, project, entity, **kwargs):
     return wandb.init(
         project=project,
         entity=entity,
-        config=kwargs,
+        config=config,
     )
