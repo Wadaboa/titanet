@@ -1,3 +1,6 @@
+dataset:
+  root: "./data"
+
 training:
   learning_rate: 0.08
   checkpoints_path: "./checkpoints"
@@ -6,9 +9,15 @@ training:
   val_fraction: 0.1
   batch_size: 64
   epochs: 250
-  loss: "aam"
+  loss: "ce"
+
+loss:
+  aam:
+    margin: 30
+    scale: 0.2
 
 titanet:
+  embedding_size: 192
   model_size: "s"
   n_mega_blocks: 5
 
@@ -30,6 +39,7 @@ audio:
     hop_length: 10 # ms
     n_mels: 80
   augmentation:
+    rir_corpora_path: "./data/RIRS_NOISES"
     max_length: 3 # s
     chunk_lengths:
       - 1.5
@@ -37,3 +47,8 @@ audio:
       - 3
     min_speed: 0.95
     max_speed: 1.05
+    freq_mask_param: 100
+    freq_mask_num: 1
+    time_mask_param: 80
+    time_mask_num: 1
+    probability: 1.0

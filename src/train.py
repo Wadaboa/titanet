@@ -11,6 +11,7 @@ import datasets, transforms, model, learn, losses, utils
 
 
 def get_transforms(
+    rir_corpora_path,
     max_length=3,
     chunk_lengths=[1.5, 2, 3],
     min_speed=0.95,
@@ -32,6 +33,7 @@ def get_transforms(
     return [
         transforms.RandomChunk(max_length, chunk_lengths),
         transforms.SpeedPerturbation(min_speed, max_speed, probability=probability),
+        transforms.Reverb(rir_corpora_path, probability=probability),
         transforms.NormalizedMelSpectrogram(
             sample_rate,
             n_fft=n_fft,
@@ -137,6 +139,7 @@ def train(params):
     """
     # Get data transformations
     transforms = get_transforms(
+        params.audio.augmentation.rir_corpora_path,
         max_length=params.audio.augmentation.max_length,
         chunk_lengths=params.audio.augmentation.chunk_lengths,
         min_speed=params.audio.augmentation.min_speed,
