@@ -1,0 +1,39 @@
+training:
+  learning_rate: 0.08
+  checkpoints_path: "./checkpoints"
+  checkpoints_frequency: 5 # epochs
+  train_fraction: 0.8
+  val_fraction: 0.1
+  batch_size: 64
+  epochs: 250
+  loss: "aam"
+
+titanet:
+  model_size: "s"
+  n_mega_blocks: 5
+
+wandb:
+  enabled: true
+  entity: "wadaboa"
+  project: "titanet"
+  api_key_file: "./init/wandb_api_key_file"
+
+generic:
+  seed: 42
+  workers: 4
+
+audio:
+  sample_rate: 16000
+  spectrogram:
+    n_fft: 512
+    win_length: 25 # ms
+    hop_length: 10 # ms
+    n_mels: 80
+  augmentation:
+    max_length: 3 # s
+    chunk_lengths:
+      - 1.5
+      - 2
+      - 3
+    min_speed: 0.95
+    max_speed: 1.05

@@ -1,7 +1,11 @@
+from argparse import ArgumentParser
+
 import torch
 import torch.optim as optim
 import torch.nn as nn
 import torchaudio
+import numpy as np
+import yaml
 
 import datasets, transforms, model, learn, losses, utils
 
@@ -17,6 +21,9 @@ def get_transforms(
     hop_length=10,
     n_mels=80,
 ):
+    """
+    Return the list of transformations described in TitaNet paper
+    """
     return [
         transforms.RandomChunk(max_length, chunk_lengths),
         transforms.SpeedPerturbation(min_speed, max_speed),
@@ -35,14 +42,29 @@ def get_datasets(dataset_root, transforms, train_fraction=0.8, val_fraction=0.1)
     Return an instance of the dataset specified in the given
     parameters, splitted into training, validation and test sets
     """
+    # Get the dataset
     dataset = datasets.LibriSpeechDataset(dataset_root, transforms=transforms)
-    train_size = int(train_fraction * len(dataset))
-    val_size = int(val_fraction * len(dataset))
-    test_size = len(dataset) - train_size - val_size
-    train_dataset, val_dataset, test_dataset = torch.utils.data.random_split(
-        dataset, [train_size, val_size, test_size]
+
+    # Get speakers
+    utt = dataset.get_speakers_utterances()
+    speakers = list(utt.keys())
+
+    # Compute training and validation set sizes
+    train_size = int(train_fraction * len(speakers))
+    val_size = int(val_fraction * len(speakers))
+
+    # Get training, validation and test indices
+    random_speakers = np.random.permutation(speakers)
+    train_indices = [utt[i] for i in random_speakers[:train_size]]
+    val_indices = [utt[i] for i in random_speakers[train_size : train_size + val_size]]
+    test_indices = [utt[i] for i in random_speakers[train_size + val_size :]]
+
+    # Split dataset by speakers
+    return (
+        torch.utils.data.Subset(dataset, train_indices),
+        torch.utils.data.Subset(dataset, val_indices),
+        torch.utils.data.Subset(dataset, test_indices),
     )
-    return train_dataset, val_dataset, test_dataset
 
 
 def get_random_dataloader(dataset, batch_size, num_workers=1):
@@ -84,48 +106,86 @@ def get_dataloaders(
     Return the appropriate dataloader for each dataset split
     """
     return (
-        get_random_dataloader(train_dataset, batch_size, num_workers),
-        get_sequential_dataloader(val_dataset, num_workers),
-        get_sequential_dataloader(test_dataset, num_workers),
+        get_random_dataloader(train_dataset, batch_size, num_workers=num_workers),
+        get_sequential_dataloader(val_dataset, num_workers=num_workers),
+        get_sequential_dataloader(test_dataset, num_workers=num_workers),
     )
 
 
-def train():
-    transforms = get_transforms()
+def train(params):
+    """
+    Training loop entry-point
+    """
+    # Get data transformations
+    transforms = get_transforms(
+        max_length=params.audio.augmentation.max_length,
+        chunk_lengths=params.audio.augmentation.chunk_lengths,
+        min_speed=params.audio.augmentation.min_speed,
+        max_speed=params.audio.augmentation.max_speed,
+        sample_rate=params.audio.sample_rate,
+        n_fft=params.audio.spectrogram.n_fft,
+        win_length=params.audio.spectrogram.win_length,
+        hop_length=params.audio.spectrogram.hop_length,
+        n_mels=params.audio.spectrogram.n_mels,
+    )
+
+    # Get datasets and dataloaders
     train_dataset, val_dataset, test_dataset = get_datasets(
-        transforms, train_fraction, val_fraction
+        transforms, params.training.train_fraction, params.training.val_fraction
     )
     train_dataloader, val_dataloader, test_dataloader = get_dataloaders(
-        train_dataset, val_dataset, test_dataset, batch_size, num_workers
+        train_dataset,
+        val_dataset,
+        test_dataset,
+        params.training.batch_size,
+        params.generic.num_workers,
     )
 
+    # Get TitaNet model
     device = utils.get_device()
-    loss_function = losses.LOSSES[loss_type]()
+    loss_function = losses.LOSSES[params.training.loss]()
     titanet = model.get_titanet(
         loss_function,
-        n_mels=n_mels,
-        n_mega_blocks=n_mega_blocks,
-        model_size=model_size,
+        n_mels=params.audio.spectrogram.n_mels,
+        n_mega_blocks=params.titanet.n_mega_blocks,
+        model_size=params.titanet.model_size,
         device=device,
     )
 
-    optimizer = optim.SGD(titanet.parameters(), lr=learning_rate)
+    # Get optimizer and scheduler
+    optimizer = optim.SGD(titanet.parameters(), lr=params.training.learning_rate)
     lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=len(train_dataloader) * training_epochs
+        optimizer, T_max=len(train_dataloader) * params.training.epochs
     )
 
+    # Perform training loop
     learn.training_loop(
-        epochs,
+        params.training.epochs,
         titanet,
         optimizer,
         train_dataloader,
         val_dataloader,
-        checkpoints_path,
+        params.training.checkpoints_path,
         lr_scheduler=lr_scheduler,
-        checkpoints_frequency=checkpoints_frequency,
-        wandb_enabled=wandb_enabled,
+        checkpoints_frequency=params.training.checkpoints_frequency,
+        wandb_enabled=params.wandb.enabled,
     )
 
 
 if __name__ == "__main__":
-    train()
+    # Parse parameters
+    parser = ArgumentParser(description="train the TitaNet model")
+    parser.add_argument(
+        "-p",
+        "--params",
+        help="path for the parameters .yml file",
+        required=True,
+        type=str,
+    )
+    args = parser.parse_args()
+    with open(args.params, "r") as params:
+        args = yaml.load(params, Loader=yaml.FullLoader)
+    params = utils.Struct(**args)
+
+    # Call the training function
+    train(params)

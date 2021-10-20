@@ -1,4 +1,5 @@
 import os
+from collections import defaultdict
 
 import torch
 import torchaudio
@@ -10,6 +11,18 @@ class LibriSpeechDataset(torchaudio.datasets.LIBRISPEECH):
             os.makedirs(root, exist_ok=True)
         super(LibriSpeechDataset, self).__init__(root, *args, **kwargs)
         self.transforms = transforms or []
+
+    def get_speakers_utterances(self):
+        """
+        Return a dictionary having as key a speaker id and
+        as value a list of indices that identify the
+        utterances spoken by that speaker
+        """
+        speakers_utterances = defaultdict(list)
+        for i, fileid in enumerate(self._walker):
+            speaker_id, _, _ = fileid.split("-")
+            speakers_utterances[int(speaker_id)].append(i)
+        return speakers_utterances
 
     @classmethod
     def collate_fn(cls, batch):
