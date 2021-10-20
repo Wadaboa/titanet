@@ -9,6 +9,19 @@ import torch.nn.functional as F
 import requests
 
 
+def copy_example(example):
+    """
+    Deep copy the given dataset example
+    """
+    new_example = dict()
+    for k, v in example.items():
+        if isinstance(v, torch.Tensor):
+            new_example[k] = torch.clone(v)
+        else:
+            new_example[k] = v
+    return new_example
+
+
 class SpeedPerturbation:
     """
     Randomly change the speed of the given waveform,
@@ -32,16 +45,19 @@ class SpeedPerturbation:
             and "sample_rate" in example
         ), "Wrong input structure"
 
+        new_example = copy_example(example)
         if random.random() < self.probability:
             speed = random.uniform(self.min_speed, self.max_speed)
             (
-                example["waveform"],
-                example["sample_rate"],
+                new_example["waveform"],
+                new_example["sample_rate"],
             ) = torchaudio.sox_effects.apply_effects_tensor(
-                example["waveform"], example["sample_rate"], [["speed", str(speed)]]
+                new_example["waveform"],
+                new_example["sample_rate"],
+                [["speed", str(speed)]],
             )
 
-        return example
+        return new_example
 
 
 class NormalizedMelSpectrogram(torchaudio.transforms.MelSpectrogram):
@@ -59,11 +75,12 @@ class NormalizedMelSpectrogram(torchaudio.transforms.MelSpectrogram):
             isinstance(example, dict) and "waveform" in example
         ), "Wrong input structure"
 
-        example["spectrogram"] = super().forward(example["waveform"])
-        example["spectrogram"] = self.amplitude_to_db(example["spectrogram"])
-        example["spectrogram"] = F.normalize(example["spectrogram"], dim=1)
+        new_example = copy_example(example)
+        new_example["spectrogram"] = super().forward(new_example["waveform"])
+        new_example["spectrogram"] = self.amplitude_to_db(new_example["spectrogram"])
+        new_example["spectrogram"] = F.normalize(new_example["spectrogram"], dim=1)
 
-        return example
+        return new_example
 
 
 class RandomChunk:
@@ -83,14 +100,17 @@ class RandomChunk:
             and "sample_rate" in example
         ), "Wrong input structure"
 
-        num_samples = example["waveform"].size(-1)
-        if num_samples / example["sample_rate"] > self.max_length:
+        new_example = copy_example(example)
+        num_samples = new_example["waveform"].size(-1)
+        if num_samples / new_example["sample_rate"] > self.max_length:
             length = random.choice(self.lengths)
-            samples = int(length * example["sample_rate"])
+            samples = int(length * new_example["sample_rate"])
             start = random.randint(0, num_samples - samples)
-            example["waveform"] = example["waveform"][:, start : start + samples]
+            new_example["waveform"] = new_example["waveform"][
+                :, start : start + samples
+            ]
 
-        return example
+        return new_example
 
 
 class SpecAugment:
@@ -123,13 +143,18 @@ class SpecAugment:
             isinstance(example, dict) and "spectrogram" in example
         ), "Wrong input structure"
 
+        new_example = copy_example(example)
         if random.random() < self.probability:
             for _ in range(self.freq_mask_num):
-                example["spectrogram"] = self.frequency_masking(example["spectrogram"])
+                new_example["spectrogram"] = self.frequency_masking(
+                    new_example["spectrogram"]
+                )
             for _ in range(self.time_mask_num):
-                example["spectrogram"] = self.time_masking(example["spectrogram"])
+                new_example["spectrogram"] = self.time_masking(
+                    new_example["spectrogram"]
+                )
 
-        return example
+        return new_example
 
 
 class Reverb:
@@ -170,10 +195,11 @@ class Reverb:
             isinstance(example, dict) and "spectrogram" in example
         ), "Wrong input structure"
 
+        new_example = copy_example(example)
         if random.random() < self.probability:
             # Extract random RIR and resample to input waveform
             # sampling rate
-            sr = example["sample_rate"]
+            sr = new_example["sample_rate"]
             rir_file = random.choice(self.rir_files)
             rir, rir_sr = torchaudio.load(rir_file)
             rir = torchaudio.functional.resample(rir, orig_freq=rir_sr, new_freq=sr)
@@ -184,10 +210,10 @@ class Reverb:
 
             # Convolve RIR with input waveform
             waveform = torch.nn.functional.pad(
-                example["waveform"], (rir.shape[1] - 1, 0)
+                new_example["waveform"], (rir.shape[1] - 1, 0)
             )
-            example["waveform"] = torch.nn.functional.conv1d(
+            new_example["waveform"] = torch.nn.functional.conv1d(
                 waveform[None, :, :], rir[None, :, :]
             )[0]
 
-        return example
+        return new_example

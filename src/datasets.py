@@ -45,6 +45,7 @@ class LibriSpeechDataset(torchaudio.datasets.LIBRISPEECH):
     def __init__(self, root, transforms=None, *args, **kwargs):
         if not os.path.exists(root):
             os.makedirs(root, exist_ok=True)
+            kwargs["download"] = True
         super(LibriSpeechDataset, self).__init__(root, *args, **kwargs)
         self.transforms = transforms or []
         self.speakers_utterances = self.get_speakers_utterances()
