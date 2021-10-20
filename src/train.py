@@ -1,5 +1,6 @@
 import sys
 from argparse import ArgumentParser
+from scipy.sparse.construct import rand
 
 import torch
 import torch.optim as optim
@@ -229,16 +230,19 @@ def train(params):
 
     # Start wandb logging
     wandb_run = None
+    run_name = utils.get_random_filename()
     if params.wandb.enabled:
         wandb_run = utils.init_wandb(
             params.wandb.api_key_file,
             params.wandb.project,
             params.wandb.entity,
+            name=run_name,
             config=params.entries,
         )
 
     # Perform training loop
     learn.training_loop(
+        run_name,
         params.training.epochs,
         titanet,
         optimizer,
@@ -246,6 +250,7 @@ def train(params):
         val_dataloader,
         params.training.checkpoints_path,
         params.training.val_every,
+        figures_path=params.training.figures_path,
         lr_scheduler=lr_scheduler,
         checkpoints_frequency=params.training.checkpoints_frequency,
         wandb_run=wandb_run,

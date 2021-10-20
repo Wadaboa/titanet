@@ -1,7 +1,7 @@
 import random
 import datetime
 import os
-from pandas.core import api
+import string
 
 import torch
 import numpy as np
@@ -63,20 +63,23 @@ def visualize_embeddings(
     reduction_method="svd",
     remove_outliers=False,
     convex_hull=False,
+    figsize=(12, 10),
+    legend=False,
+    show=True,
+    save=None,
 ):
     """
     Plot the given embedding vectors, after reducing them to 2D
     """
     assert (
-        isinstance(embeddings, np.ndarray)
-        and len(embeddings.shape) == 2
-        and embeddings.shape[1] > 1
+        len(embeddings.shape) == 2 and embeddings.shape[1] > 1
     ), "Wrong embeddings format/dimension"
     assert (
-        isinstance(labels, np.ndarray)
-        and len(labels.shape) == 1
-        and labels.shape[0] == embeddings.shape[0]
+        len(labels.shape) == 1 and labels.shape[0] == embeddings.shape[0]
     ), "Wrong labels format/dimension"
+
+    # Convert embeddings and labels to numpy
+    embeddings, labels = to_numpy(embeddings), to_numpy(labels)
 
     # Compute dimesionality reduction to 2D
     if embeddings.shape[1] > 2:
@@ -96,7 +99,7 @@ def visualize_embeddings(
     )
 
     # Plot embeddings and centroids
-    _, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=figsize)
     for l, c in cluster_colors.items():
         to_plot = embeddings_df[embeddings_df.l == l]
         label = labels_mapping[l] if labels_mapping is not None else l
@@ -147,8 +150,15 @@ def visualize_embeddings(
                 continue
 
     # Spawn the plot
-    plt.legend()
-    plt.show()
+    if legend:
+        plt.legend()
+    if save is not None:
+        os.makedirs(os.path.dirname(save), exist_ok=True)
+        plt.savefig(save)
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
 
 
 def reduce(embeddings, n_components=2, reduction_method="svd", seed=42):
@@ -162,6 +172,14 @@ def reduce(embeddings, n_components=2, reduction_method="svd", seed=42):
     elif reduction_method == "tsne":
         reducer = TSNE(n_components=n_components, metric="cosine", random_state=seed)
     return reducer.fit_transform(embeddings)
+
+
+def get_random_filename(length=10):
+    """
+    Return a random sequence of letters, to be used as unique filenames
+    """
+    symbols = string.ascii_lowercase
+    return "".join(random.choice(symbols) for _ in range(length))
 
 
 def plot_spectrogram(spectrogram, figsize=(12, 3)):
@@ -263,7 +281,7 @@ def get_metrics(y_true, y_pred, prefix=None):
     return metrics
 
 
-def init_wandb(api_key_file, project, entity, config=None):
+def init_wandb(api_key_file, project, entity, name=None, config=None):
     """
     Return a new W&B run to be used for logging purposes
     """
@@ -271,6 +289,7 @@ def init_wandb(api_key_file, project, entity, config=None):
     api_key_value = open(api_key_file, "r").read().strip()
     os.environ["WANDB_API_KEY"] = api_key_value
     return wandb.init(
+        name=name,
         project=project,
         entity=entity,
         config=config,

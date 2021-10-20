@@ -5,6 +5,7 @@ training:
   learning_rate: 0.08
   lr_scheduler: false
   checkpoints_path: "./checkpoints"
+  figures_path: "./figures"
   checkpoints_frequency: 5 # epochs
   train_fraction: 0.8
   val_fraction: 0.1

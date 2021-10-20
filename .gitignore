@@ -134,6 +134,10 @@ dmypy.json
 # Datasets
 data/
 
+# Training
+checkpoints/
+figures/
+
 # Wandb
 init/wandb_api_key_file
 wandb/

@@ -38,7 +38,7 @@ class CELoss(MetricLearningLoss):
         logits = self.fc(inputs)
         preds = torch.argmax(logits, dim=1)
         loss = F.cross_entropy(logits, targets)
-        return preds, loss
+        return inputs, preds, loss
 
 
 class ArcFaceLoss(MetricLearningLoss):
@@ -91,7 +91,7 @@ class ArcFaceLoss(MetricLearningLoss):
         # Rely on standard cross-entropy using modified logits
         loss = F.cross_entropy(logits, targets)
 
-        return preds, loss
+        return inputs, preds, loss
 
 
 LOSSES = {"ce": CELoss, "aam": ArcFaceLoss}
