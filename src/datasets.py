@@ -3,6 +3,7 @@ from collections import defaultdict
 
 import torch
 import torchaudio
+import numpy as np
 
 
 def collate_fn(batch, n_mels=80, device="cpu"):
@@ -62,6 +63,18 @@ class SpeakerDataset:
         """
         raise NotImplementedError()
 
+    def info(self):
+        """
+        Return a dictionary of generic info about the dataset
+        """
+        utterances_per_speaker = [len(u) for u in self.speakers_utterances.values()]
+        return {
+            "utterances": len(self),
+            "speakers": len(self.speakers),
+            "utterances_per_speaker_mean": round(np.mean(utterances_per_speaker), 2),
+            "utterances_per_speaker_std": round(np.std(utterances_per_speaker), 2),
+        }
+
     def __getitem__(self, idx):
         waveform, sample_rate, speaker = self.get_sample(idx)
         example = {
@@ -92,7 +105,7 @@ class LibriSpeechDataset(SpeakerDataset, torchaudio.datasets.LIBRISPEECH):
         speakers_utterances = defaultdict(list)
         for i, fileid in enumerate(self._walker):
             speaker_id, _, _ = fileid.split("-")
-            speakers_utterances[int(speaker_id)].append(i)
+            speakers_utterances[speaker_id].append(i)
         return speakers_utterances
 
     def get_sample(self, idx):
@@ -116,13 +129,13 @@ class VCTKDataset(SpeakerDataset, torchaudio.datasets.VCTK_092):
         if not os.path.exists(root):
             os.makedirs(root, exist_ok=True)
             kwargs["download"] = True
-        torchaudio.datasets.VCTKDataset.__init__(self, root, *args, **kwargs)
+        torchaudio.datasets.VCTK_092.__init__(self, root, *args, **kwargs)
         SpeakerDataset.__init__(self, transforms=transforms)
 
     def get_speakers_utterances(self):
         speakers_utterances = defaultdict(list)
         for i, (speaker_id, _) in enumerate(self._sample_ids):
-            speakers_utterances[int(speaker_id)].append(i)
+            speakers_utterances[speaker_id].append(i)
         return speakers_utterances
 
     def get_sample(self, idx):

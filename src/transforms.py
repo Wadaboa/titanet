@@ -236,3 +236,27 @@ class ToDevice:
             if isinstance(v, torch.Tensor):
                 new_example[k] = v.to(self.device)
         return new_example
+
+
+class Resample:
+    """
+    Change the sample rate of the raw waveform to the target one
+    """
+
+    def __init__(self, target_sample_rate):
+        self.target_sample_rate = target_sample_rate
+
+    def __call__(self, example):
+        assert (
+            isinstance(example, dict)
+            and "waveform" in example
+            and "sample_rate" in example
+        ), "Wrong input structure"
+
+        new_example = copy_example(example)
+        new_example["waveform"] = torchaudio.functional.resample(
+            new_example["waveform"], new_example["sample_rate"], self.target_sample_rate
+        )
+        new_example["sample_rate"] = self.target_sample_rate
+
+        return new_example

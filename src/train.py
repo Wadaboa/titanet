@@ -17,13 +17,14 @@ def get_simple_transforms(
     Return only the mel-spectrogram transform
     """
     return [
+        transforms.Resample(sample_rate),
         transforms.NormalizedMelSpectrogram(
             sample_rate,
             n_fft=n_fft,
             win_length=int(win_length / 1000 * sample_rate),
             hop_length=int(hop_length / 1000 * sample_rate),
             n_mels=n_mels,
-        )
+        ),
     ]
 
 
@@ -49,6 +50,7 @@ def get_transforms(
     """
     return [
         transforms.RandomChunk(max_length, chunk_lengths),
+        transforms.Resample(sample_rate),
         transforms.SpeedPerturbation(min_speed, max_speed, probability=probability),
         transforms.Reverb(rir_corpora_path, probability=probability),
         transforms.NormalizedMelSpectrogram(
