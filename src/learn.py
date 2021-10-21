@@ -45,7 +45,7 @@ def log_epoch(current_epoch, total_epochs, metrics, prefix):
     table.add_column("Split")
     table.add_column("Epoch")
     for k in metrics:
-        table.add_column(k.capitalize())
+        table.add_column(k.replace(prefix, "").replace("/", "").capitalize())
     metric_values = [f"{m:.2f}" for m in metrics.values()]
     table.add_row(
         prefix.capitalize(),
@@ -63,6 +63,7 @@ def train_one_epoch(
     dataloader,
     figures_path=None,
     wandb_run=None,
+    log_console=True,
 ):
     """
     Train the given model for one epoch with the given dataloader and optimizer
@@ -81,15 +82,16 @@ def train_one_epoch(
         model_time = time.time() - model_time
 
         # Log to console
-        log_step(
-            current_epoch,
-            total_epochs,
-            step,
-            len(dataloader),
-            loss,
-            model_time,
-            "train",
-        )
+        if log_console:
+            log_step(
+                current_epoch,
+                total_epochs,
+                step,
+                len(dataloader),
+                loss,
+                model_time,
+                "train",
+            )
 
         # Store epoch info
         epoch_loss += loss
@@ -110,14 +112,15 @@ def train_one_epoch(
 
     # Get metrics
     metrics = utils.get_metrics(epoch_targets, epoch_preds, prefix="train")
-    metrics["train/loss"] = epoch_loss
+    metrics["train/loss"] = epoch_loss / len(dataloader)
     metrics["train/time"] = epoch_time
 
     # Log to console
-    log_epoch(current_epoch, total_epochs, metrics, "train")
+    if log_console:
+        log_epoch(current_epoch, total_epochs, metrics, "train")
 
     # Plot embeddings
-    epoch_embeddings = torch.cat(epoch_embeddings)
+    epoch_embeddings = torch.stack(epoch_embeddings)
     if figures_path is not None:
         figure_path = os.path.join(figures_path, f"epoch_{current_epoch}_train.png")
         utils.visualize_embeddings(
@@ -172,6 +175,7 @@ def training_loop(
     lr_scheduler=None,
     checkpoints_frequency=None,
     wandb_run=None,
+    log_console=True,
 ):
     """
     Standard training loop function: train and evaluate
@@ -198,6 +202,7 @@ def training_loop(
             train_dataloader,
             figures_path=figures_path,
             wandb_run=wandb_run,
+            log_console=log_console,
         )
 
         # Decay the learning rate
@@ -225,6 +230,7 @@ def training_loop(
                 "val",
                 figures_path=figures_path,
                 wandb_run=wandb_run,
+                log_console=log_console,
             )
 
     # Always save the last checkpoint
@@ -246,6 +252,7 @@ def training_loop(
         "test",
         figures_path=figures_path,
         wandb_run=wandb_run,
+        log_console=log_console,
     )
 
 
@@ -258,6 +265,7 @@ def evaluate(
     prefix,
     figures_path=None,
     wandb_run=None,
+    log_console=True,
 ):
     """
     Evaluate the given model for one epoch with the given dataloader
@@ -276,15 +284,16 @@ def evaluate(
         model_time = time.time() - model_time
 
         # Log to console
-        log_step(
-            current_epoch,
-            total_epochs,
-            step,
-            len(dataloader),
-            loss,
-            model_time,
-            prefix,
-        )
+        if log_console:
+            log_step(
+                current_epoch,
+                total_epochs,
+                step,
+                len(dataloader),
+                loss,
+                model_time,
+                prefix,
+            )
 
         # Store epoch info
         epoch_loss += loss
@@ -295,14 +304,15 @@ def evaluate(
 
     # Get metrics and return them
     metrics = utils.get_metrics(epoch_targets, epoch_preds, prefix=prefix)
-    metrics[f"{prefix}/loss"] = epoch_loss
+    metrics[f"{prefix}/loss"] = epoch_loss / len(dataloader)
     metrics[f"{prefix}/time"] = epoch_time
 
     # Log to console
-    log_epoch(current_epoch, total_epochs, metrics, prefix)
+    if log_console:
+        log_epoch(current_epoch, total_epochs, metrics, prefix)
 
     # Plot embeddings
-    epoch_embeddings = torch.cat(epoch_embeddings)
+    epoch_embeddings = torch.stack(epoch_embeddings)
     if figures_path is not None:
         figure_path = os.path.join(figures_path, f"epoch_{current_epoch}_{prefix}.png")
         utils.visualize_embeddings(

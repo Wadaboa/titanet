@@ -273,6 +273,7 @@ def train(params):
         lr_scheduler=lr_scheduler,
         checkpoints_frequency=params.training.checkpoints_frequency,
         wandb_run=wandb_run,
+        log_console=params.generic.log_console,
     )
 
     # Stop wandb logging

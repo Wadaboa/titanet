@@ -72,6 +72,10 @@ def visualize_embeddings(
     """
     Plot the given embedding vectors, after reducing them to 2D
     """
+    # Convert embeddings and labels to numpy
+    embeddings, labels = to_numpy(embeddings), to_numpy(labels)
+
+    # Check inputs
     assert (
         len(embeddings.shape) == 2 and embeddings.shape[1] > 1
     ), "Wrong embeddings format/dimension"
@@ -81,9 +85,6 @@ def visualize_embeddings(
     assert not (
         only_centroids and convex_hull
     ), "Cannot compute convex hull when only centroids are displayed"
-
-    # Convert embeddings and labels to numpy
-    embeddings, labels = to_numpy(embeddings), to_numpy(labels)
 
     # Compute dimesionality reduction to 2D
     if embeddings.shape[1] > 2:
@@ -233,6 +234,8 @@ def to_numpy(arr):
     """
     if isinstance(arr, np.ndarray):
         return arr
+    elif isinstance(arr, list):
+        return np.array(arr)
     elif isinstance(arr, torch.Tensor):
         return arr.detach().cpu().numpy()
     return None

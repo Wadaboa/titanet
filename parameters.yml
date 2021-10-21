@@ -9,7 +9,7 @@ training:
   checkpoints_frequency: 50 # epochs
   train_fraction: 0.8
   val_fraction: 0.1
-  batch_size: 32
+  batch_size: 16
   epochs: 250
   loss: "aam"
   val_every: 25 # epochs
@@ -33,6 +33,7 @@ wandb:
 generic:
   seed: 42
   workers: 0
+  log_console: true
 
 audio:
   sample_rate: 16000

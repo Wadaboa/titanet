@@ -386,7 +386,7 @@ class AttentiveStatsPooling(nn.Module):
         scores_w = (
             self.scores_w.unsqueeze(0).expand(batch_size, self.input_size).unsqueeze(2)
         )
-        scores = projection.bmm(scores_w).squeeze() + self.scores_b
+        scores = projection.bmm(scores_w).squeeze(-1) + self.scores_b
 
         # Compute attention weights of shape [B, T]
         weights = F.softmax(scores, dim=1)
