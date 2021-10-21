@@ -1,11 +1,9 @@
 import sys
 from argparse import ArgumentParser
-from scipy.sparse.construct import rand
+from functools import partial
 
 import torch
 import torch.optim as optim
-import torch.nn as nn
-import torchaudio
 import numpy as np
 import yaml
 
@@ -111,7 +109,7 @@ def get_datasets(dataset_root, transforms, train_fraction=0.8, val_fraction=0.1)
     )
 
 
-def get_random_dataloader(dataset, batch_size, num_workers=1):
+def get_random_dataloader(dataset, batch_size, num_workers=1, device="cpu"):
     """
     Return a dataloader that randomly samples a batch of data
     from the given dataset, to use in the training procedure
@@ -124,11 +122,11 @@ def get_random_dataloader(dataset, batch_size, num_workers=1):
         dataset,
         batch_sampler=random_batch_sampler,
         num_workers=num_workers,
-        collate_fn=datasets.collate_fn,
+        collate_fn=partial(datasets.collate_fn, device=device),
     )
 
 
-def get_sequential_dataloader(dataset, num_workers=1):
+def get_sequential_dataloader(dataset, num_workers=1, device="cpu"):
     """
     Return a dataloader that sequentially samples one observation
     at a time from the given dataset, to use in validation/test phases
@@ -139,20 +137,22 @@ def get_sequential_dataloader(dataset, num_workers=1):
         batch_size=1,
         sampler=sequential_sampler,
         num_workers=num_workers,
-        collate_fn=datasets.collate_fn,
+        collate_fn=partial(datasets.collate_fn, device=device),
     )
 
 
 def get_dataloaders(
-    train_dataset, val_dataset, test_dataset, batch_size, num_workers=1
+    train_dataset, val_dataset, test_dataset, batch_size, num_workers=1, device="cpu"
 ):
     """
     Return the appropriate dataloader for each dataset split
     """
     return (
-        get_random_dataloader(train_dataset, batch_size, num_workers=num_workers),
-        get_sequential_dataloader(val_dataset, num_workers=num_workers),
-        get_sequential_dataloader(test_dataset, num_workers=num_workers),
+        get_random_dataloader(
+            train_dataset, batch_size, num_workers=num_workers, device=device
+        ),
+        get_sequential_dataloader(val_dataset, num_workers=num_workers, device=device),
+        get_sequential_dataloader(test_dataset, num_workers=num_workers, device=device),
     )
 
 
@@ -161,7 +161,9 @@ def train(params):
     Training loop entry-point
     """
     # Set random seed for reproducibility
+    # and get GPU if present
     utils.set_seed(params.generic.seed)
+    device = utils.get_device()
 
     # Get data transformations
     if params.audio.augmentation.enabled:
@@ -198,7 +200,8 @@ def train(params):
         val_dataset,
         test_dataset,
         params.training.batch_size,
-        params.generic.workers,
+        num_workers=params.generic.workers,
+        device=device,
     )
 
     # Get loss function
@@ -210,7 +213,6 @@ def train(params):
     )
 
     # Get TitaNet model
-    device = utils.get_device()
     titanet = model.get_titanet(
         loss_function,
         embedding_size=params.titanet.embedding_size,
@@ -222,15 +224,17 @@ def train(params):
 
     # Get optimizer and scheduler
     optimizer = optim.SGD(titanet.parameters(), lr=params.training.learning_rate)
+    optimizer = utils.optimizer_to(optimizer, device=device)
     lr_scheduler = None
     if params.training.lr_scheduler:
         lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(
             optimizer, T_max=len(train_dataloader) * params.training.epochs
         )
+        lr_scheduler = utils.scheduler_to(lr_scheduler, device=device)
 
     # Start wandb logging
     wandb_run = None
-    run_name = utils.get_random_filename()
+    run_name = utils.now()
     if params.wandb.enabled:
         wandb_run = utils.init_wandb(
             params.wandb.api_key_file,
@@ -248,6 +252,7 @@ def train(params):
         optimizer,
         train_dataloader,
         val_dataloader,
+        test_dataloader,
         params.training.checkpoints_path,
         params.training.val_every,
         figures_path=params.training.figures_path,

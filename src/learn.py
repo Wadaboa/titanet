@@ -16,7 +16,7 @@ CONSOLE = Console()
 
 
 def log_step(
-    current_epoch, total_epochs, current_step, total_steps, loss, time, val=False
+    current_epoch, total_epochs, current_step, total_steps, loss, time, prefix
 ):
     """
     Log metrics to the console after a forward pass
@@ -28,7 +28,7 @@ def log_step(
     table.add_column("Loss")
     table.add_column("Time")
     table.add_row(
-        "Training" if not val else "Validation",
+        prefix.capitalize(),
         f"{current_epoch} / {total_epochs}",
         f"{current_step} / {total_steps}",
         f"{loss}",
@@ -37,7 +37,7 @@ def log_step(
     CONSOLE.print(table)
 
 
-def log_epoch(current_epoch, total_epochs, metrics, val=False):
+def log_epoch(current_epoch, total_epochs, metrics, prefix):
     """
     Log metrics to the console after an epoch
     """
@@ -47,7 +47,7 @@ def log_epoch(current_epoch, total_epochs, metrics, val=False):
     for k in metrics:
         table.add_column(k.capitalize())
     table.add_row(
-        "Training" if not val else "Validation",
+        prefix.capitalize(),
         f"{current_epoch} / {total_epochs}",
         *tuple(metrics.values()),
     )
@@ -87,7 +87,7 @@ def train_one_epoch(
             len(dataloader),
             loss,
             model_time,
-            val=False,
+            "train",
         )
 
         # Store epoch info
@@ -113,7 +113,7 @@ def train_one_epoch(
     metrics["train/time"] = epoch_time
 
     # Log to console
-    log_epoch(current_epoch, total_epochs, metrics, val=False)
+    log_epoch(current_epoch, total_epochs, metrics, "train")
 
     # Plot embeddings
     epoch_embeddings = torch.cat(epoch_embeddings)
@@ -151,7 +151,7 @@ def save_checkpoint(
     }
 
     # Save state dictionary
-    checkpoint_file = os.path.join(checkpoints_path, f"{utils.now()}_{epoch}.pth")
+    checkpoint_file = os.path.join(checkpoints_path, f"epoch_{epoch}.pth")
     torch.save(state_dict, checkpoint_file)
     if wandb_run is not None:
         wandb_run.save(checkpoint_file)
@@ -164,6 +164,7 @@ def training_loop(
     optimizer,
     train_dataloader,
     val_dataloader,
+    test_dataloader,
     checkpoints_path,
     val_every,
     figures_path=None,
@@ -175,6 +176,10 @@ def training_loop(
     Standard training loop function: train and evaluate
     after each training epoch
     """
+    # Create checkpoints directory
+    checkpoints_path = os.path.join(checkpoints_path, run_name)
+    os.makedirs(checkpoints_path, exist_ok=True)
+
     # Create figures directory
     if figures_path is not None:
         figures_path = os.path.join(figures_path, run_name)
@@ -216,6 +221,7 @@ def training_loop(
                 epochs,
                 model,
                 val_dataloader,
+                "val",
                 figures_path=figures_path,
                 wandb_run=wandb_run,
             )
@@ -230,10 +236,27 @@ def training_loop(
         wandb_run=wandb_run,
     )
 
+    # Final test
+    evaluate(
+        epochs + 1,
+        epochs + 1,
+        model,
+        test_dataloader,
+        "test",
+        figures_path=figures_path,
+        wandb_run=wandb_run,
+    )
+
 
 @torch.no_grad()
 def evaluate(
-    current_epoch, total_epochs, model, dataloader, figures_path=None, wandb_run=None
+    current_epoch,
+    total_epochs,
+    model,
+    dataloader,
+    prefix,
+    figures_path=None,
+    wandb_run=None,
 ):
     """
     Evaluate the given model for one epoch with the given dataloader
@@ -259,7 +282,7 @@ def evaluate(
             len(dataloader),
             loss,
             model_time,
-            val=True,
+            prefix,
         )
 
         # Store epoch info
@@ -270,17 +293,17 @@ def evaluate(
         epoch_embeddings += embeddings
 
     # Get metrics and return them
-    metrics = utils.get_metrics(epoch_targets, epoch_preds, prefix="val")
-    metrics["val/loss"] = epoch_loss
-    metrics["val/time"] = epoch_time
+    metrics = utils.get_metrics(epoch_targets, epoch_preds, prefix=prefix)
+    metrics[f"{prefix}/loss"] = epoch_loss
+    metrics[f"{prefix}/time"] = epoch_time
 
     # Log to console
-    log_epoch(current_epoch, total_epochs, metrics, val=True)
+    log_epoch(current_epoch, total_epochs, metrics, prefix)
 
     # Plot embeddings
     epoch_embeddings = torch.cat(epoch_embeddings)
     if figures_path is not None:
-        figure_path = os.path.join(figures_path, f"epoch_{current_epoch}_val.png")
+        figure_path = os.path.join(figures_path, f"epoch_{current_epoch}_{prefix}.png")
         utils.visualize_embeddings(
             epoch_embeddings,
             epoch_targets,
@@ -288,7 +311,7 @@ def evaluate(
             save=figure_path,
         )
         if wandb_run is not None:
-            metrics["val/embeddings"] = wandb.Image(figure_path)
+            metrics[f"{prefix}/embeddings"] = wandb.Image(figure_path)
 
     # Log to wandb
     if wandb_run is not None:

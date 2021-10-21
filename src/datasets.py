@@ -4,10 +4,11 @@ from collections import defaultdict
 import torch
 import torchaudio
 
-# Add VCTK_092,TEDLIUM,SPEECHCOMMANDS,LIBRITTS
+# Add VCTK_092,TEDLIUM,SPEECHCOMMANDS,LIBRITTS from torchaudio
+# Add ...
 
 
-def collate_fn(batch):
+def collate_fn(batch, device="cpu"):
     """
     Convert a list of samples extracted from the dataset to
     a proper batch, i.e. a tuple of stacked tensors
@@ -33,7 +34,7 @@ def collate_fn(batch):
         spectrograms[i, :, : spectrogram.shape[-1]] = torch.FloatTensor(spectrogram)
 
     # Return a batch of tensors
-    return spectrograms, spectrogram_lengths, speakers
+    return spectrograms.to(device), spectrogram_lengths.to(device), speakers.to(device)
 
 
 class LibriSpeechDataset(torchaudio.datasets.LIBRISPEECH):
@@ -68,7 +69,7 @@ class LibriSpeechDataset(torchaudio.datasets.LIBRISPEECH):
     def __getitem__(self, idx):
         waveform, sample_rate, _, speaker, _, _ = super().__getitem__(idx)
         example = {
-            "waveform": waveform,
+            "waveform": waveform.to("cpu"),
             "sample_rate": sample_rate,
             "spectrogram": None,
             "speaker": speaker,
