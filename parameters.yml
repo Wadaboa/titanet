@@ -6,13 +6,13 @@ training:
   lr_scheduler: false
   checkpoints_path: "./checkpoints"
   figures_path: "./figures"
-  checkpoints_frequency: 5 # epochs
+  checkpoints_frequency: 50 # epochs
   train_fraction: 0.8
   val_fraction: 0.1
-  batch_size: 64
+  batch_size: 32
   epochs: 250
-  loss: "ce"
-  val_every: 5 # epochs
+  loss: "aam"
+  val_every: 25 # epochs
 
 loss:
   aam:
@@ -25,14 +25,14 @@ titanet:
   n_mega_blocks: false
 
 wandb:
-  enabled: false
+  enabled: true
   entity: "wadaboa"
   project: "titanet"
   api_key_file: "./init/wandb_api_key_file"
 
 generic:
   seed: 42
-  workers: 4
+  workers: 0
 
 audio:
   sample_rate: 16000

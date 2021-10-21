@@ -26,7 +26,7 @@ pip install -r init/requirements.txt
 
 ## Execution
 
-Both training and testing parts of the project are managed through a Jupyter notebook ([titanet.ipynb](titanet.ipynb)). The notebook contains an broad analysis of the dataset in use, an explanation of all the data augmentation techniques reported in the paper, a description of the TitaNet model and a way to train and test it. Hyper-parameters are handled via the `parameters.yml` file. To run the Jupyter notebook, execute the following command:
+Both training and testing parts of the project are managed through a Jupyter notebook ([titanet.ipynb](titanet.ipynb)). The notebook contains a broad analysis of the dataset in use, an explanation of all the data augmentation techniques reported in the paper, a description of the TitaNet model and a way to train and test it. Hyper-parameters are handled via the `parameters.yml` file. To run the Jupyter notebook, execute the following command:
 
 ```bash
 jupyter notebook titanet.ipynb

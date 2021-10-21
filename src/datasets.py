@@ -4,50 +4,43 @@ from collections import defaultdict
 import torch
 import torchaudio
 
-# Add VCTK_092,TEDLIUM,SPEECHCOMMANDS,LIBRITTS from torchaudio
-# Add ...
 
-
-def collate_fn(batch, device="cpu"):
+def collate_fn(batch, n_mels=80, device="cpu"):
     """
     Convert a list of samples extracted from the dataset to
     a proper batch, i.e. a tuple of stacked tensors
     """
     # Compute lengths and convert data to lists
-    spectrograms, spectrogram_lengths, speakers = [], [], []
+    spectrogram_lengths, speakers = [], []
     for example in batch:
-        spectrograms.append(example["spectrogram"])
         spectrogram_lengths.append(example["spectrogram"].size(-1))
         speakers.append(example["speaker_id"])
 
     # Convert collected lists to tensors
-    spectrogram_lengths = torch.LongTensor(spectrogram_lengths)
-    speakers = torch.LongTensor(speakers)
+    spectrogram_lengths = torch.LongTensor(spectrogram_lengths).to(device)
+    speakers = torch.LongTensor(speakers).to(device)
 
     # Fill tensors up to the maximum length
-    n_mels = spectrograms[0].size(1)
     spectrograms = torch.zeros(
-        len(batch), n_mels, max(spectrogram_lengths), dtype=torch.float
+        len(batch), n_mels, max(spectrogram_lengths), dtype=torch.float, device=device
     )
     for i, example in enumerate(batch):
-        spectrogram = example["spectrogram"]
-        spectrograms[i, :, : spectrogram.shape[-1]] = torch.FloatTensor(spectrogram)
+        spectrograms[i, :, : spectrogram_lengths[i]] = (
+            example["spectrogram"].to(device).to(torch.float32)
+        )
 
     # Return a batch of tensors
-    return spectrograms.to(device), spectrogram_lengths.to(device), speakers.to(device)
+    return spectrograms, spectrogram_lengths, speakers
 
 
-class LibriSpeechDataset(torchaudio.datasets.LIBRISPEECH):
+class SpeakerDataset:
     """
-    LibriSpeech dataset with the ability to apply transforms
-    on raw input data
+    Generic dataset with the ability to apply transforms
+    on raw input data, that returns a standard output
+    when indexed
     """
 
-    def __init__(self, root, transforms=None, *args, **kwargs):
-        if not os.path.exists(root):
-            os.makedirs(root, exist_ok=True)
-            kwargs["download"] = True
-        super(LibriSpeechDataset, self).__init__(root, *args, **kwargs)
+    def __init__(self, transforms=None):
         self.transforms = transforms or []
         self.speakers_utterances = self.get_speakers_utterances()
         self.speakers = list(self.speakers_utterances.keys())
@@ -60,14 +53,17 @@ class LibriSpeechDataset(torchaudio.datasets.LIBRISPEECH):
         as value a list of indices that identify the
         utterances spoken by that speaker
         """
-        speakers_utterances = defaultdict(list)
-        for i, fileid in enumerate(self._walker):
-            speaker_id, _, _ = fileid.split("-")
-            speakers_utterances[int(speaker_id)].append(i)
-        return speakers_utterances
+        raise NotImplementedError()
+
+    def get_sample(self, idx):
+        """
+        Return a tuple (waveform, rate, speaker) identifying
+        the utterance at the given index
+        """
+        raise NotImplementedError()
 
     def __getitem__(self, idx):
-        waveform, sample_rate, _, speaker, _, _ = super().__getitem__(idx)
+        waveform, sample_rate, speaker = self.get_sample(idx)
         example = {
             "waveform": waveform.to("cpu"),
             "sample_rate": sample_rate,
@@ -78,3 +74,59 @@ class LibriSpeechDataset(torchaudio.datasets.LIBRISPEECH):
         for transform in self.transforms:
             example = transform(example)
         return example
+
+
+class LibriSpeechDataset(SpeakerDataset, torchaudio.datasets.LIBRISPEECH):
+    """
+    Custom LibriSpeech dataset for speaker-related tasks
+    """
+
+    def __init__(self, root, transforms=None, *args, **kwargs):
+        if not os.path.exists(root):
+            os.makedirs(root, exist_ok=True)
+            kwargs["download"] = True
+        torchaudio.datasets.LIBRISPEECH.__init__(self, root, *args, **kwargs)
+        SpeakerDataset.__init__(self, transforms=transforms)
+
+    def get_speakers_utterances(self):
+        speakers_utterances = defaultdict(list)
+        for i, fileid in enumerate(self._walker):
+            speaker_id, _, _ = fileid.split("-")
+            speakers_utterances[int(speaker_id)].append(i)
+        return speakers_utterances
+
+    def get_sample(self, idx):
+        (
+            waveform,
+            sample_rate,
+            _,
+            speaker,
+            _,
+            _,
+        ) = torchaudio.datasets.LIBRISPEECH.__getitem__(self, idx)
+        return waveform, sample_rate, speaker
+
+
+class VCTKDataset(SpeakerDataset, torchaudio.datasets.VCTK_092):
+    """
+    Custom VCTK dataset for speaker-related tasks
+    """
+
+    def __init__(self, root, transforms=None, *args, **kwargs):
+        if not os.path.exists(root):
+            os.makedirs(root, exist_ok=True)
+            kwargs["download"] = True
+        torchaudio.datasets.VCTKDataset.__init__(self, root, *args, **kwargs)
+        SpeakerDataset.__init__(self, transforms=transforms)
+
+    def get_speakers_utterances(self):
+        speakers_utterances = defaultdict(list)
+        for i, (speaker_id, _) in enumerate(self._sample_ids):
+            speakers_utterances[int(speaker_id)].append(i)
+        return speakers_utterances
+
+    def get_sample(self, idx):
+        waveform, sample_rate, _, speaker, _ = torchaudio.datasets.VCTK_092.__getitem__(
+            self, idx
+        )
+        return waveform, sample_rate, speaker

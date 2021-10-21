@@ -217,3 +217,22 @@ class Reverb:
             )[0]
 
         return new_example
+
+
+class ToDevice:
+    """
+    Transfer tensors to device
+    """
+
+    def __init__(self, device="cpu"):
+        self.device = device
+
+    def __call__(self, example):
+        assert isinstance(example, dict), "Wrong input structure"
+
+        new_example = copy_example(example)
+        for k, v in new_example.items():
+            new_example[k] = v
+            if isinstance(v, torch.Tensor):
+                new_example[k] = v.to(self.device)
+        return new_example

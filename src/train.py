@@ -11,11 +11,7 @@ import datasets, transforms, model, learn, losses, utils
 
 
 def get_simple_transforms(
-    sample_rate=16000,
-    n_fft=512,
-    win_length=25,
-    hop_length=10,
-    n_mels=80,
+    sample_rate=16000, n_fft=512, win_length=25, hop_length=10, n_mels=80
 ):
     """
     Return only the mel-spectrogram transform
@@ -109,7 +105,7 @@ def get_datasets(dataset_root, transforms, train_fraction=0.8, val_fraction=0.1)
     )
 
 
-def get_random_dataloader(dataset, batch_size, num_workers=1, device="cpu"):
+def get_random_dataloader(dataset, batch_size, num_workers=0, n_mels=80, device="cpu"):
     """
     Return a dataloader that randomly samples a batch of data
     from the given dataset, to use in the training procedure
@@ -122,11 +118,11 @@ def get_random_dataloader(dataset, batch_size, num_workers=1, device="cpu"):
         dataset,
         batch_sampler=random_batch_sampler,
         num_workers=num_workers,
-        collate_fn=partial(datasets.collate_fn, device=device),
+        collate_fn=partial(datasets.collate_fn, n_mels=n_mels, device=device),
     )
 
 
-def get_sequential_dataloader(dataset, num_workers=1, device="cpu"):
+def get_sequential_dataloader(dataset, num_workers=0, n_mels=80, device="cpu"):
     """
     Return a dataloader that sequentially samples one observation
     at a time from the given dataset, to use in validation/test phases
@@ -137,22 +133,36 @@ def get_sequential_dataloader(dataset, num_workers=1, device="cpu"):
         batch_size=1,
         sampler=sequential_sampler,
         num_workers=num_workers,
-        collate_fn=partial(datasets.collate_fn, device=device),
+        collate_fn=partial(datasets.collate_fn, n_mels=n_mels, device=device),
     )
 
 
 def get_dataloaders(
-    train_dataset, val_dataset, test_dataset, batch_size, num_workers=1, device="cpu"
+    train_dataset,
+    val_dataset,
+    test_dataset,
+    batch_size,
+    num_workers=0,
+    n_mels=80,
+    device="cpu",
 ):
     """
     Return the appropriate dataloader for each dataset split
     """
     return (
         get_random_dataloader(
-            train_dataset, batch_size, num_workers=num_workers, device=device
+            train_dataset,
+            batch_size,
+            num_workers=num_workers,
+            n_mels=n_mels,
+            device=device,
         ),
-        get_sequential_dataloader(val_dataset, num_workers=num_workers, device=device),
-        get_sequential_dataloader(test_dataset, num_workers=num_workers, device=device),
+        get_sequential_dataloader(
+            val_dataset, num_workers=num_workers, n_mels=n_mels, device=device
+        ),
+        get_sequential_dataloader(
+            test_dataset, num_workers=num_workers, n_mels=n_mels, device=device
+        ),
     )
 
 
@@ -201,6 +211,7 @@ def train(params):
         test_dataset,
         params.training.batch_size,
         num_workers=params.generic.workers,
+        n_mels=params.audio.spectrogram.n_mels,
         device=device,
     )
 

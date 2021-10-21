@@ -31,8 +31,8 @@ def log_step(
         prefix.capitalize(),
         f"{current_epoch} / {total_epochs}",
         f"{current_step} / {total_steps}",
-        f"{loss}",
-        f"{round(time, 2)} s",
+        f"{loss:.2f}",
+        f"{time:.2f} s",
     )
     CONSOLE.print(table)
 
@@ -46,10 +46,11 @@ def log_epoch(current_epoch, total_epochs, metrics, prefix):
     table.add_column("Epoch")
     for k in metrics:
         table.add_column(k.capitalize())
+    metric_values = [f"{m:.2f}" for m in metrics.values()]
     table.add_row(
         prefix.capitalize(),
         f"{current_epoch} / {total_epochs}",
-        *tuple(metrics.values()),
+        *tuple(metric_values),
     )
     CONSOLE.print(table)
 
