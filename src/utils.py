@@ -62,6 +62,7 @@ def visualize_embeddings(
     labels_mapping=None,
     reduction_method="svd",
     remove_outliers=False,
+    only_centroids=True,
     convex_hull=False,
     figsize=(12, 10),
     legend=False,
@@ -77,6 +78,9 @@ def visualize_embeddings(
     assert (
         len(labels.shape) == 1 and labels.shape[0] == embeddings.shape[0]
     ), "Wrong labels format/dimension"
+    assert not (
+        only_centroids and convex_hull
+    ), "Cannot compute convex hull when only centroids are displayed"
 
     # Convert embeddings and labels to numpy
     embeddings, labels = to_numpy(embeddings), to_numpy(labels)
@@ -103,7 +107,6 @@ def visualize_embeddings(
     for l, c in cluster_colors.items():
         to_plot = embeddings_df[embeddings_df.l == l]
         label = labels_mapping[l] if labels_mapping is not None else l
-        ax.scatter(to_plot.x, to_plot.y, color=c, label=f"{label}")
         ax.scatter(
             to_plot.x.mean(),
             to_plot.y.mean(),
@@ -111,6 +114,8 @@ def visualize_embeddings(
             label=f"{label} (C)",
             marker="^",
         )
+        if not only_centroids:
+            ax.scatter(to_plot.x, to_plot.y, color=c, label=f"{label}")
 
     # Do not represent outliers
     if remove_outliers:

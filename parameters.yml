@@ -22,7 +22,7 @@ loss:
 titanet:
   embedding_size: 192
   model_size: "s"
-  n_mega_blocks: 5
+  n_mega_blocks: false
 
 wandb:
   enabled: false

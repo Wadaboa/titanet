@@ -213,11 +213,14 @@ def train(params):
     )
 
     # Get TitaNet model
+    n_mega_blocks = None
+    if params.titanet.n_mega_blocks:
+        n_mega_blocks = params.titanet.n_mega_blocks
     titanet = model.get_titanet(
         loss_function,
         embedding_size=params.titanet.embedding_size,
         n_mels=params.audio.spectrogram.n_mels,
-        n_mega_blocks=params.titanet.n_mega_blocks,
+        n_mega_blocks=n_mega_blocks,
         model_size=params.titanet.model_size,
         device=device,
     )

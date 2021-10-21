@@ -3,15 +3,19 @@ from functools import partial
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
 
 import modules, losses
+
+
+TARGET_PARAMS = {"s": 6.4, "m": 13.4, "l": 25.3}
 
 
 def get_titanet(
     loss_function,
     embedding_size=192,
     n_mels=80,
-    n_mega_blocks=5,
+    n_mega_blocks=None,
     model_size="s",
     device="cpu",
 ):
@@ -27,6 +31,12 @@ def get_titanet(
     assert isinstance(
         loss_function, losses.MetricLearningLoss
     ), "Unsupported loss function"
+
+    # Get the best number of mega blocks
+    if n_mega_blocks is None:
+        n_mega_blocks = find_n_mega_blocks(
+            loss_function, embedding_size, n_mels, model_size
+        )
 
     # Assign parameters common to all model sizes
     titanet = partial(
@@ -47,6 +57,35 @@ def get_titanet(
         return titanet(encoder_hidden_size=512, mega_block_kernel_size=7)
     elif model_size.lower() == "l":
         return titanet(encoder_hidden_size=1024, mega_block_kernel_size=11)
+
+
+def find_n_mega_blocks(
+    loss_function,
+    embedding_size,
+    n_mels,
+    model_size,
+    n_mega_blocks_trials=None,
+):
+    """
+    Find the best number of mega blocks s.t. the spawned TitaNet model
+    has the closest number of parameters to the given target ones
+    """
+    if n_mega_blocks_trials is None:
+        n_mega_blocks_trials = list(range(1, 20))
+    target_params = TARGET_PARAMS[model_size]
+    best_value, min_distance = None, np.inf
+    for n_mega_blocks in n_mega_blocks_trials:
+        titanet = get_titanet(
+            loss_function, embedding_size, n_mels, n_mega_blocks, model_size
+        )
+        params = titanet.get_n_params(div=1e6)
+        distance = target_params - params
+        if distance < 0:
+            break
+        if distance < min_distance:
+            best_value = n_mega_blocks
+            min_distance = distance
+    return best_value
 
 
 class TitaNet(nn.Module):
@@ -98,6 +137,15 @@ class TitaNet(nn.Module):
 
         # Transfer to device
         self.to(device)
+
+    def get_n_params(self, div=1):
+        """
+        Return the number of parameters in the model and possibly
+        divide it by the given number
+        """
+        return (
+            sum([np.prod(p.size()) for p in self.parameters() if p.requires_grad]) / div
+        )
 
     def forward(self, spectrograms, speakers=None):
         """
