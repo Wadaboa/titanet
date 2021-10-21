@@ -105,7 +105,7 @@ class LibriSpeechDataset(SpeakerDataset, torchaudio.datasets.LIBRISPEECH):
         speakers_utterances = defaultdict(list)
         for i, fileid in enumerate(self._walker):
             speaker_id, _, _ = fileid.split("-")
-            speakers_utterances[speaker_id].append(i)
+            speakers_utterances[int(speaker_id)].append(i)
         return speakers_utterances
 
     def get_sample(self, idx):

@@ -15,9 +15,15 @@ training:
   val_every: 25 # epochs
 
 loss:
+  mam:
+    margin: 4
+    scale: 64
+  acm:
+    margin: 0.2
+    scale: 64
   aam:
-    margin: 30
-    scale: 0.2
+    margin: 0.2
+    scale: 30
 
 titanet:
   embedding_size: 192
