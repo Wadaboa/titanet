@@ -70,13 +70,17 @@ def get_transforms(
     ]
 
 
-def get_datasets(dataset_root, transforms, train_fraction=0.8, val_fraction=0.1):
+def get_datasets(
+    dataset_root,
+    transforms,
+    train_fraction=0.8,
+    test_speakers=10,
+    test_utterances_per_speaker=10,
+):
     """
     Return an instance of the dataset specified in the given
     parameters, splitted into training, validation and test sets
     """
-    assert train_fraction + val_fraction < 1.0, "Not enough data for test set"
-
     # Get the dataset
     dataset = datasets.LibriSpeechDataset(dataset_root, transforms=transforms)
 
@@ -84,25 +88,38 @@ def get_datasets(dataset_root, transforms, train_fraction=0.8, val_fraction=0.1)
     utterances = dataset.speakers_utterances
     speakers = dataset.speakers
 
-    # Compute training and validation set sizes
-    train_size = int(train_fraction * len(speakers))
-    val_size = int(val_fraction * len(speakers))
-
-    # Get training, validation and test indices
+    # Get training utterances as the first percentage slice
     random_speakers = np.random.permutation(speakers)
-    train_indices = utils.flatten([utterances[i] for i in random_speakers[:train_size]])
-    val_indices = utils.flatten(
-        [utterances[i] for i in random_speakers[train_size : train_size + val_size]]
+    train_speakers = int(train_fraction * len(speakers))
+    train_utterances = utils.flatten(
+        [utterances[s] for s in random_speakers[:train_speakers]]
     )
-    test_indices = utils.flatten(
-        [utterances[i] for i in random_speakers[train_size + val_size :]]
+
+    # Get test utterances by selecting the given number of
+    # utterances for each of the given number of speakers
+    remaining_speakers = random_speakers[train_speakers:]
+    assert (
+        len(remaining_speakers) > test_speakers
+    ), "Not enough speakers for test and validation"
+    test_utterances = utils.flatten(
+        [
+            utterances[s][:test_utterances_per_speaker]
+            for s in remaining_speakers[:test_speakers]
+        ]
     )
+
+    # Get validation set utterances as the ones remaining after
+    # training and test set splits
+    val_utterances = []
+    for s in remaining_speakers:
+        min_utterance = test_utterances_per_speaker if s < test_speakers else 0
+        val_utterances += [utterances[s][min_utterance:]]
 
     # Split dataset by speakers
     return (
-        torch.utils.data.Subset(dataset, train_indices),
-        torch.utils.data.Subset(dataset, val_indices),
-        torch.utils.data.Subset(dataset, test_indices),
+        torch.utils.data.Subset(dataset, train_utterances),
+        torch.utils.data.Subset(dataset, val_utterances),
+        torch.utils.data.Subset(dataset, test_utterances),
         len(speakers),
     )
 
@@ -127,7 +144,7 @@ def get_random_dataloader(dataset, batch_size, num_workers=0, n_mels=80, device=
 def get_sequential_dataloader(dataset, num_workers=0, n_mels=80, device="cpu"):
     """
     Return a dataloader that sequentially samples one observation
-    at a time from the given dataset, to use in validation/test phases
+    at a time from the given dataset, to use in the validation phase
     """
     sequential_sampler = torch.utils.data.SequentialSampler(dataset)
     return torch.utils.data.DataLoader(
@@ -142,7 +159,6 @@ def get_sequential_dataloader(dataset, num_workers=0, n_mels=80, device="cpu"):
 def get_dataloaders(
     train_dataset,
     val_dataset,
-    test_dataset,
     batch_size,
     num_workers=0,
     n_mels=80,
@@ -161,9 +177,6 @@ def get_dataloaders(
         ),
         get_sequential_dataloader(
             val_dataset, num_workers=num_workers, n_mels=n_mels, device=device
-        ),
-        get_sequential_dataloader(
-            test_dataset, num_workers=num_workers, n_mels=n_mels, device=device
         ),
     )
 
@@ -205,12 +218,12 @@ def train(params):
         params.dataset.root,
         transforms,
         params.training.train_fraction,
-        params.training.val_fraction,
+        params.test.num_speakers,
+        params.test.num_utterances_per_speaker,
     )
-    train_dataloader, val_dataloader, test_dataloader = get_dataloaders(
+    train_dataloader, val_dataloader = get_dataloaders(
         train_dataset,
         val_dataset,
-        test_dataset,
         params.training.batch_size,
         num_workers=params.generic.workers,
         n_mels=params.audio.spectrogram.n_mels,
@@ -268,7 +281,7 @@ def train(params):
         optimizer,
         train_dataloader,
         val_dataloader,
-        test_dataloader,
+        test_dataset,
         params.training.checkpoints_path,
         params.training.val_every,
         figures_path=params.training.figures_path,
@@ -276,6 +289,10 @@ def train(params):
         checkpoints_frequency=params.training.checkpoints_frequency,
         wandb_run=wandb_run,
         log_console=params.generic.log_console,
+        mindcf_p_target=params.test.mindcf_p_target,
+        mindcf_c_fa=params.test.mindcf_c_fa,
+        mindcf_c_miss=params.test.mindcf_c_miss,
+        device=device,
     )
 
     # Stop wandb logging

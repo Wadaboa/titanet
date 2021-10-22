@@ -2,11 +2,14 @@ import os
 import time
 import math
 import sys
+import json
 
 import torch
+import torch.nn.functional as F
 import wandb
 from rich.console import Console
 from rich.table import Table
+from tqdm import tqdm
 
 import utils
 
@@ -22,11 +25,11 @@ def log_step(
     Log metrics to the console after a forward pass
     """
     table = Table(show_header=True, header_style="bold")
-    table.add_column("Split")
-    table.add_column("Epoch")
-    table.add_column("Step")
-    table.add_column("Loss")
-    table.add_column("Time")
+    table.add_column("SPLIT")
+    table.add_column("EPOCH")
+    table.add_column("STEP")
+    table.add_column("LOSS")
+    table.add_column("TIME")
     table.add_row(
         prefix.capitalize(),
         f"{current_epoch} / {total_epochs}",
@@ -42,10 +45,10 @@ def log_epoch(current_epoch, total_epochs, metrics, prefix):
     Log metrics to the console after an epoch
     """
     table = Table(show_header=True, header_style="bold")
-    table.add_column("Split")
-    table.add_column("Epoch")
+    table.add_column("SPLIT")
+    table.add_column("EPOCH")
     for k in metrics:
-        table.add_column(k.replace(prefix, "").replace("/", "").capitalize())
+        table.add_column(k.replace(prefix, "").replace("/", "").upper())
     metric_values = [f"{m:.2f}" for m in metrics.values()]
     table.add_row(
         prefix.capitalize(),
@@ -111,7 +114,7 @@ def train_one_epoch(
         optimizer.step()
 
     # Get metrics
-    metrics = utils.get_metrics(epoch_targets, epoch_preds, prefix="train")
+    metrics = utils.get_train_val_metrics(epoch_targets, epoch_preds, prefix="train")
     metrics["train/loss"] = epoch_loss / len(dataloader)
     metrics["train/time"] = epoch_time
 
@@ -168,7 +171,7 @@ def training_loop(
     optimizer,
     train_dataloader,
     val_dataloader,
-    test_dataloader,
+    test_dataset,
     checkpoints_path,
     val_every,
     figures_path=None,
@@ -176,6 +179,10 @@ def training_loop(
     checkpoints_frequency=None,
     wandb_run=None,
     log_console=True,
+    mindcf_p_target=0.01,
+    mindcf_c_fa=1,
+    mindcf_c_miss=1,
+    device="cpu",
 ):
     """
     Standard training loop function: train and evaluate
@@ -227,7 +234,6 @@ def training_loop(
                 epochs,
                 model,
                 val_dataloader,
-                "val",
                 figures_path=figures_path,
                 wandb_run=wandb_run,
                 log_console=log_console,
@@ -244,15 +250,15 @@ def training_loop(
     )
 
     # Final test
-    evaluate(
-        epochs + 1,
-        epochs + 1,
+    test(
         model,
-        test_dataloader,
-        "test",
-        figures_path=figures_path,
+        test_dataset,
         wandb_run=wandb_run,
         log_console=log_console,
+        mindcf_p_target=mindcf_p_target,
+        mindcf_c_fa=mindcf_c_fa,
+        mindcf_c_miss=mindcf_c_miss,
+        device=device,
     )
 
 
@@ -262,7 +268,6 @@ def evaluate(
     total_epochs,
     model,
     dataloader,
-    prefix,
     figures_path=None,
     wandb_run=None,
     log_console=True,
@@ -292,7 +297,7 @@ def evaluate(
                 len(dataloader),
                 loss,
                 model_time,
-                prefix,
+                "val",
             )
 
         # Store epoch info
@@ -303,18 +308,18 @@ def evaluate(
         epoch_embeddings += embeddings
 
     # Get metrics and return them
-    metrics = utils.get_metrics(epoch_targets, epoch_preds, prefix=prefix)
-    metrics[f"{prefix}/loss"] = epoch_loss / len(dataloader)
-    metrics[f"{prefix}/time"] = epoch_time
+    metrics = utils.get_train_val_metrics(epoch_targets, epoch_preds, prefix="val")
+    metrics[f"val/loss"] = epoch_loss / len(dataloader)
+    metrics[f"val/time"] = epoch_time
 
     # Log to console
     if log_console:
-        log_epoch(current_epoch, total_epochs, metrics, prefix)
+        log_epoch(current_epoch, total_epochs, metrics, "val")
 
     # Plot embeddings
     epoch_embeddings = torch.stack(epoch_embeddings)
     if figures_path is not None:
-        figure_path = os.path.join(figures_path, f"epoch_{current_epoch}_{prefix}.png")
+        figure_path = os.path.join(figures_path, f"epoch_{current_epoch}_val.png")
         utils.visualize_embeddings(
             epoch_embeddings,
             epoch_targets,
@@ -322,8 +327,58 @@ def evaluate(
             save=figure_path,
         )
         if wandb_run is not None:
-            metrics[f"{prefix}/embeddings"] = wandb.Image(figure_path)
+            metrics[f"val/embeddings"] = wandb.Image(figure_path)
 
     # Log to wandb
     if wandb_run is not None:
         wandb_run.log(metrics, step=current_epoch)
+
+
+@torch.no_grad()
+def test(
+    model,
+    test_dataset,
+    wandb_run=None,
+    log_console=True,
+    mindcf_p_target=0.01,
+    mindcf_c_fa=1,
+    mindcf_c_miss=1,
+    device="cpu",
+):
+    """
+    Test the given model and store EER and minDCF metrics
+    """
+    # Put the model in evaluation mode
+    model.eval()
+
+    # Get cosine similarity scores and labels
+    samples = (
+        test_dataset.get_sample_pairs(device=device)
+        if not isinstance(test_dataset, torch.utils.data.Subset)
+        else test_dataset.dataset.get_sample_pairs(
+            indices=test_dataset.indices, device=device
+        )
+    )
+    scores, labels = [], []
+    for s1, s2, label in tqdm(samples, desc="Building scores and labels"):
+        e1, e2 = model(s1), model(s2)
+        scores += [F.cosine_similarity(e1, e2).cpu().item()]
+        labels += [int(label)]
+
+    # Get test metrics (EER and minDCF)
+    metrics = utils.get_test_metrics(
+        scores,
+        labels,
+        mindcf_p_target=mindcf_p_target,
+        mindcf_c_fa=mindcf_c_fa,
+        mindcf_c_miss=mindcf_c_miss,
+        prefix="test",
+    )
+
+    # Log to console
+    if log_console:
+        log_epoch(None, None, metrics, "test")
+
+    # Log to wandb
+    if wandb_run is not None:
+        wandb_run.notes = json.dumps(metrics, indent=2).encode("utf-8")

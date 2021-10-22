@@ -1,9 +1,11 @@
 import os
+import itertools
 from collections import defaultdict
 
 import torch
 import torchaudio
 import numpy as np
+from tqdm import tqdm
 
 
 def collate_fn(batch, n_mels=80, device="cpu"):
@@ -62,6 +64,26 @@ class SpeakerDataset:
         the utterance at the given index
         """
         raise NotImplementedError()
+
+    def get_sample_pairs(self, indices=None, device="cpu"):
+        """
+        Return a list of tuples (s1, s2, l), where s1, s2
+        is a pair of utterances and l indicates whether
+        w1 and w2 are from the same speaker
+        """
+        indices = indices or list(range(len(self)))
+        indices = itertools.product(indices, repeat=2)
+        samples = []
+        for i1, i2 in tqdm(indices, desc="Loading sample pairs"):
+            e1, e2 = self.__getitem__(i1), self.__getitem__(i2)
+            samples += [
+                (
+                    e1["spectrogram"].to(device),
+                    e2["spectrogram"].to(device),
+                    e1["speaker"] == e2["speaker"],
+                )
+            ]
+        return samples
 
     def info(self):
         """

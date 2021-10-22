@@ -8,11 +8,17 @@ training:
   figures_path: "./figures"
   checkpoints_frequency: 50 # epochs
   train_fraction: 0.8
-  val_fraction: 0.1
   batch_size: 16
   epochs: 250
   loss: "arc"
   val_every: 25 # epochs
+
+test:
+  mindcf_p_target: 0.01
+  mindcf_c_fa: 1
+  mindcf_c_miss: 1
+  num_speakers: 10
+  num_utterances_per_speaker: 10
 
 loss:
   sphere:
