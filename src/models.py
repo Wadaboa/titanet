@@ -8,84 +8,49 @@ import numpy as np
 import modules, losses
 
 
-TARGET_PARAMS = {"s": 6.4, "m": 13.4, "l": 25.3}
-
-
-def get_titanet(
-    loss_function,
-    embedding_size=192,
-    n_mels=80,
-    n_mega_blocks=None,
-    model_size="s",
-    device="cpu",
-):
+class DumbConvNet(nn.Module):
     """
-    Return one of the three TitaNet instances described in the paper,
-    i.e. TitaNet-S, TitaNet-M or TitaNet-L
+    Simple convolutional model used to test the learning loop
     """
-    assert isinstance(model_size, str) and model_size.lower() in (
-        "s",
-        "m",
-        "l",
-    ), "Unsupported model size"
-    assert isinstance(
-        loss_function, losses.MetricLearningLoss
-    ), "Unsupported loss function"
 
-    # Get the best number of mega blocks
-    if n_mega_blocks is None:
-        n_mega_blocks = find_n_mega_blocks(
-            loss_function, embedding_size, n_mels, model_size
+    def __init__(
+        self,
+        n_mels,
+        loss_function,
+        hidden_size=256,
+        embedding_size=192,
+        kernel_size=3,
+        n_layers=1,
+    ):
+        super(DumbConvNet, self).__init__()
+
+        channels = [n_mels] + [hidden_size] * n_layers
+        self.conv = nn.Sequential(
+            *[
+                modules.ConvBlock1d(in_channels, out_channels, kernel_size=kernel_size)
+                for in_channels, out_channels in zip(channels[:-1], channels[1:])
+            ]
         )
+        self.fc = nn.Linear(hidden_size, embedding_size)
+        self.pool = nn.AdaptiveAvgPool1d(1)
+        self.loss_function = loss_function
 
-    # Assign parameters common to all model sizes
-    titanet = partial(
-        TitaNet,
-        n_mels=n_mels,
-        n_mega_blocks=n_mega_blocks,
-        loss_function=loss_function,
-        n_sub_blocks=3,
-        encoder_output_size=1536,
-        embedding_size=embedding_size,
-        device=device,
-    )
+    def forward(self, spectrograms, speakers=None):
+        """
+        Given input spectrograms of shape [B, M, T], DumbConvNet returns
+        utterance-level embeddings of shape [B, E]
 
-    # Return the selected model size
-    if model_size.lower() == "s":
-        return titanet(encoder_hidden_size=256, mega_block_kernel_size=3)
-    elif model_size.lower() == "m":
-        return titanet(encoder_hidden_size=512, mega_block_kernel_size=7)
-    elif model_size.lower() == "l":
-        return titanet(encoder_hidden_size=1024, mega_block_kernel_size=11)
-
-
-def find_n_mega_blocks(
-    loss_function,
-    embedding_size,
-    n_mels,
-    model_size,
-    n_mega_blocks_trials=None,
-):
-    """
-    Find the best number of mega blocks s.t. the spawned TitaNet model
-    has the closest number of parameters to the given target ones
-    """
-    if n_mega_blocks_trials is None:
-        n_mega_blocks_trials = list(range(1, 20))
-    target_params = TARGET_PARAMS[model_size]
-    best_value, min_distance = None, np.inf
-    for n_mega_blocks in n_mega_blocks_trials:
-        titanet = get_titanet(
-            loss_function, embedding_size, n_mels, n_mega_blocks, model_size
-        )
-        params = titanet.get_n_params(div=1e6)
-        distance = target_params - params
-        if distance < 0:
-            break
-        if distance < min_distance:
-            best_value = n_mega_blocks
-            min_distance = distance
-    return best_value
+        B: batch size
+        M: number of mel frequency bands
+        T: maximum number of time steps (frames)
+        E: embedding size
+        """
+        encodings = self.conv(spectrograms)
+        embeddings = self.fc(encodings.transpose(1, 2))
+        embeddings = self.pool(embeddings.transpose(1, 2)).squeeze(-1)
+        if speakers is None:
+            return embeddings
+        return self.loss_function(embeddings, speakers)
 
 
 class TitaNet(nn.Module):
@@ -98,6 +63,8 @@ class TitaNet(nn.Module):
     separable convolutions and global context", Kologuri et al.,
     https://arxiv.org/abs/2110.04410
     """
+
+    TARGET_PARAMS = {"s": 6.4, "m": 13.4, "l": 25.3}
 
     def __init__(
         self,
@@ -146,6 +113,89 @@ class TitaNet(nn.Module):
         return (
             sum([np.prod(p.size()) for p in self.parameters() if p.requires_grad]) / div
         )
+
+    @classmethod
+    def find_n_mega_blocks(
+        cls,
+        loss_function,
+        embedding_size,
+        n_mels,
+        model_size,
+        n_mega_blocks_trials=None,
+    ):
+        """
+        Find the best number of mega blocks s.t. the spawned TitaNet model
+        has the closest number of parameters to the given target ones
+        """
+        if n_mega_blocks_trials is None:
+            n_mega_blocks_trials = list(range(1, 20))
+        target_params = cls.TARGET_PARAMS[model_size]
+        best_value, min_distance = None, np.inf
+        for n_mega_blocks in n_mega_blocks_trials:
+            titanet = cls.get_titanet(
+                loss_function,
+                embedding_size=embedding_size,
+                n_mels=n_mels,
+                n_mega_blocks=n_mega_blocks,
+                model_size=model_size,
+            )
+            params = titanet.get_n_params(div=1e6)
+            distance = target_params - params
+            if distance < 0:
+                break
+            if distance < min_distance:
+                best_value = n_mega_blocks
+                min_distance = distance
+        return best_value
+
+    @classmethod
+    def get_titanet(
+        cls,
+        loss_function,
+        embedding_size=192,
+        n_mels=80,
+        n_mega_blocks=None,
+        model_size="s",
+        device="cpu",
+    ):
+        """
+        Return one of the three TitaNet instances described in the paper,
+        i.e. TitaNet-S, TitaNet-M or TitaNet-L
+        """
+        assert isinstance(model_size, str) and model_size.lower() in (
+            "s",
+            "m",
+            "l",
+        ), "Unsupported model size"
+        assert isinstance(
+            loss_function, losses.MetricLearningLoss
+        ), "Unsupported loss function"
+
+        # Get the best number of mega blocks
+        if n_mega_blocks is None:
+            n_mega_blocks = cls.find_n_mega_blocks(
+                loss_function, embedding_size, n_mels, model_size
+            )
+
+        # Assign parameters common to all model sizes
+        titanet = partial(
+            TitaNet,
+            n_mels=n_mels,
+            n_mega_blocks=n_mega_blocks,
+            loss_function=loss_function,
+            n_sub_blocks=3,
+            encoder_output_size=1536,
+            embedding_size=embedding_size,
+            device=device,
+        )
+
+        # Return the selected model size
+        if model_size.lower() == "s":
+            return titanet(encoder_hidden_size=256, mega_block_kernel_size=3)
+        elif model_size.lower() == "m":
+            return titanet(encoder_hidden_size=512, mega_block_kernel_size=7)
+        elif model_size.lower() == "l":
+            return titanet(encoder_hidden_size=1024, mega_block_kernel_size=11)
 
     def forward(self, spectrograms, speakers=None):
         """

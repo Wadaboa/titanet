@@ -2,18 +2,22 @@ dataset:
   root: "./data"
 
 training:
+  dumb:
+    enabled: true
+    n_layers: 10
   learning_rate: 0.08
   lr_scheduler: false
   checkpoints_path: "./checkpoints"
   figures_path: "./figures"
   checkpoints_frequency: 50 # epochs
   train_fraction: 0.8
-  batch_size: 16
+  batch_size: 32
   epochs: 250
-  loss: "arc"
-  val_every: 25 # epochs
+  loss: "ce"
+  val_every: false # epochs
 
 test:
+  enabled: true
   mindcf_p_target: 0.01
   mindcf_c_fa: 1
   mindcf_c_miss: 1
@@ -36,7 +40,7 @@ titanet:
   n_mega_blocks: false
 
 wandb:
-  enabled: true
+  enabled: false
   entity: "wadaboa"
   project: "titanet"
   api_key_file: "./init/wandb_api_key_file"

@@ -170,10 +170,10 @@ def training_loop(
     model,
     optimizer,
     train_dataloader,
-    val_dataloader,
-    test_dataset,
     checkpoints_path,
-    val_every,
+    test_dataset=None,
+    val_dataloader=None,
+    val_every=None,
     figures_path=None,
     lr_scheduler=None,
     checkpoints_frequency=None,
@@ -228,7 +228,11 @@ def training_loop(
             )
 
         # Evaluate once in a while (always evaluate at the first and last epochs)
-        if epoch % val_every == 0 or epoch == 1 or epoch == epochs:
+        if (
+            val_dataloader is not None
+            and val_every is not None
+            and (epoch % val_every == 0 or epoch == 1 or epoch == epochs)
+        ):
             evaluate(
                 epoch,
                 epochs,
@@ -250,16 +254,17 @@ def training_loop(
     )
 
     # Final test
-    test(
-        model,
-        test_dataset,
-        wandb_run=wandb_run,
-        log_console=log_console,
-        mindcf_p_target=mindcf_p_target,
-        mindcf_c_fa=mindcf_c_fa,
-        mindcf_c_miss=mindcf_c_miss,
-        device=device,
-    )
+    if test_dataset is not None:
+        test(
+            model,
+            test_dataset,
+            wandb_run=wandb_run,
+            log_console=log_console,
+            mindcf_p_target=mindcf_p_target,
+            mindcf_c_fa=mindcf_c_fa,
+            mindcf_c_miss=mindcf_c_miss,
+            device=device,
+        )
 
 
 @torch.no_grad()

@@ -7,7 +7,7 @@ import torch.optim as optim
 import numpy as np
 import yaml
 
-import datasets, transforms, model, learn, losses, utils
+import datasets, transforms, models, learn, losses, utils
 
 
 def get_simple_transforms(
@@ -221,6 +221,9 @@ def train(params):
         params.test.num_speakers,
         params.test.num_utterances_per_speaker,
     )
+
+    if params.training.dumb.enabled:
+        train_dataset = test_dataset
     train_dataloader, val_dataloader = get_dataloaders(
         train_dataset,
         val_dataset,
@@ -239,20 +242,27 @@ def train(params):
     )
 
     # Get TitaNet model
-    n_mega_blocks = None
-    if params.titanet.n_mega_blocks:
-        n_mega_blocks = params.titanet.n_mega_blocks
-    titanet = model.get_titanet(
-        loss_function,
-        embedding_size=params.titanet.embedding_size,
-        n_mels=params.audio.spectrogram.n_mels,
-        n_mega_blocks=n_mega_blocks,
-        model_size=params.titanet.model_size,
-        device=device,
-    )
+    if params.training.dumb.enabled:
+        model = models.DumbConvNet(
+            params.audio.spectrogram.n_mels,
+            loss_function,
+            n_layers=params.training.dumb.n_layers,
+        )
+    else:
+        n_mega_blocks = None
+        if params.titanet.n_mega_blocks:
+            n_mega_blocks = params.titanet.n_mega_blocks
+        model = models.get_titanet(
+            loss_function,
+            embedding_size=params.titanet.embedding_size,
+            n_mels=params.audio.spectrogram.n_mels,
+            n_mega_blocks=n_mega_blocks,
+            model_size=params.titanet.model_size,
+            device=device,
+        )
 
     # Get optimizer and scheduler
-    optimizer = optim.SGD(titanet.parameters(), lr=params.training.learning_rate)
+    optimizer = optim.SGD(model.parameters(), lr=params.training.learning_rate)
     optimizer = utils.optimizer_to(optimizer, device=device)
     lr_scheduler = None
     if params.training.lr_scheduler:
@@ -277,13 +287,13 @@ def train(params):
     learn.training_loop(
         run_name,
         params.training.epochs,
-        titanet,
+        model,
         optimizer,
         train_dataloader,
-        val_dataloader,
-        test_dataset,
         params.training.checkpoints_path,
-        params.training.val_every,
+        test_dataset=test_dataset if params.test.enabled else None,
+        val_dataloader=val_dataloader,
+        val_every=params.training.val_every or None,
         figures_path=params.training.figures_path,
         lr_scheduler=lr_scheduler,
         checkpoints_frequency=params.training.checkpoints_frequency,
