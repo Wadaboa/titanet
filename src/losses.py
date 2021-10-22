@@ -81,7 +81,7 @@ class AngularMarginLoss(MetricLearningLoss):
 
         # Set scale
         scales = (
-            torch.tensor([self.scale]).repeat(inputs.size(0))
+            torch.tensor([self.scale], device=inputs.device).repeat(inputs.size(0))
             if self.scale is not None
             else inputs_norms
         )
@@ -98,7 +98,9 @@ class AngularMarginLoss(MetricLearningLoss):
         # Compute loss numerator by converting angles back to cosines,
         # after adding penalties, as if they were the output of the
         # last linear layer
-        numerator = scales * (torch.cos(self.m1 * angles + self.m2) - self.m3)
+        numerator = scales.unsqueeze(-1) * (
+            torch.cos(self.m1 * angles + self.m2) - self.m3
+        )
         numerator = torch.diagonal(numerator.transpose(0, 1)[targets])
 
         # Compute loss denominator
