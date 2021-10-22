@@ -52,22 +52,15 @@ class AngularMarginLoss(MetricLearningLoss):
     """
 
     def __init__(
-        self,
-        embedding_size,
-        n_classes,
-        normalize_input=True,
-        scale=64,
-        m1=1,
-        m2=0,
-        m3=0,
+        self, embedding_size, n_classes, scale=None, m1=1, m2=0, m3=0, eps=1e-6
     ):
-        super(ArcFaceLoss, self).__init__(embedding_size, n_classes)
+        super(AngularMarginLoss, self).__init__(embedding_size, n_classes)
         self.fc = nn.Linear(embedding_size, n_classes, bias=False)
-        self.normalize_input = normalize_input
         self.scale = scale
         self.m1 = m1
         self.m2 = m2
         self.m3 = m3
+        self.eps = eps
 
     def forward(self, inputs, targets):
         """
@@ -78,16 +71,24 @@ class AngularMarginLoss(MetricLearningLoss):
         E: embedding size
         """
         # Normalize weights
-        for parameter in self.fc.parameters():
-            parameter = F.normalize(parameter, p=2, dim=1)
+        self.fc.weight.data = F.normalize(self.fc.weight.data, p=2, dim=1)
 
         # Normalize inputs
-        if self.normalize_input:
-            inputs = F.normalize(inputs, p=2, dim=1)
+        inputs_norms = torch.norm(inputs, p=2, dim=1)
+        normalized_inputs = inputs / inputs_norms.unsqueeze(-1).repeat(
+            1, inputs.size(1)
+        )
+
+        # Set scale
+        scales = (
+            torch.tensor([self.scale]).repeat(inputs.size(0))
+            if self.scale is not None
+            else inputs_norms
+        )
 
         # Cosine similarity is given by a simple dot product,
         # given that we normalized both weights and inputs
-        cosines = self.fc(inputs)
+        cosines = self.fc(normalized_inputs).clamp(-1, 1)
         preds = torch.argmax(cosines, dim=1)
 
         # Recover angles from cosines computed
@@ -97,22 +98,22 @@ class AngularMarginLoss(MetricLearningLoss):
         # Compute loss numerator by converting angles back to cosines,
         # after adding penalties, as if they were the output of the
         # last linear layer
-        numerator = self.scale * (torch.cos(self.m1 * angles + self.m2) - self.m3)
+        numerator = scales * (torch.cos(self.m1 * angles + self.m2) - self.m3)
+        numerator = torch.diagonal(numerator.transpose(0, 1)[targets])
 
         # Compute loss denominator
         excluded = torch.cat(
             [
-                torch.cat((cosines[i, :y], cosines[i, y + 1 :])).unsqueeze(0)
+                scales[i]
+                * torch.cat((cosines[i, :y], cosines[i, y + 1 :])).unsqueeze(0)
                 for i, y in enumerate(targets)
             ],
             dim=0,
         )
-        denominator = torch.exp(numerator) + torch.sum(
-            torch.exp(self.scale * excluded), dim=1
-        )
+        denominator = torch.exp(numerator) + torch.sum(torch.exp(excluded), dim=1)
 
         # Compute cross-entropy loss
-        loss = -torch.mean(numerator - torch.log(denominator))
+        loss = -torch.mean(numerator - torch.log(denominator + self.eps))
 
         return inputs, preds, loss
 
@@ -125,16 +126,10 @@ class SphereFaceLoss(AngularMarginLoss):
     Liu et al., https://arxiv.org/abs/1704.08063
     """
 
-    def __init__(
-        self, embedding_size, n_classes, normalize_input=True, scale=64, margin=0.5
-    ):
+    def __init__(self, embedding_size, n_classes, scale=None, margin=3, eps=1e-6):
         assert margin > 1, "Margin out of bounds"
         super(SphereFaceLoss, self).__init__(
-            embedding_size,
-            n_classes,
-            normalize_input=normalize_input,
-            scale=scale,
-            m1=margin,
+            embedding_size, n_classes, scale=scale, m1=margin, eps=eps
         )
 
 
@@ -146,16 +141,10 @@ class CosFaceLoss(AngularMarginLoss):
     Wang et al., https://arxiv.org/abs/1801.09414
     """
 
-    def __init__(
-        self, embedding_size, n_classes, normalize_input=True, scale=64, margin=0.5
-    ):
+    def __init__(self, embedding_size, n_classes, scale=64, margin=0.2, eps=1e-6):
         assert margin > 0 and margin < 1 - np.cos(np.pi / 4), "Margin out of bounds"
         super(CosFaceLoss, self).__init__(
-            embedding_size,
-            n_classes,
-            normalize_input=normalize_input,
-            scale=scale,
-            m3=margin,
+            embedding_size, n_classes, scale=scale, m3=margin, eps=eps
         )
 
 
@@ -167,17 +156,16 @@ class ArcFaceLoss(AngularMarginLoss):
     Deng et al., https://arxiv.org/abs/1801.07698
     """
 
-    def __init__(
-        self, embedding_size, n_classes, normalize_input=True, scale=64, margin=0.5
-    ):
+    def __init__(self, embedding_size, n_classes, scale=64, margin=0.5, eps=1e-6):
         assert margin > 0 and margin < 1, "Margin out of bounds"
         super(ArcFaceLoss, self).__init__(
-            embedding_size,
-            n_classes,
-            normalize_input=normalize_input,
-            scale=scale,
-            m2=margin,
+            embedding_size, n_classes, scale=scale, m2=margin, eps=eps
         )
 
 
-LOSSES = {"ce": CELoss, "mam": SphereFaceLoss, "acm": CosFaceLoss, "aam": ArcFaceLoss}
+LOSSES = {
+    "ce": CELoss,
+    "sphere": SphereFaceLoss,
+    "cos": CosFaceLoss,
+    "arc": ArcFaceLoss,
+}

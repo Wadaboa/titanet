@@ -11,17 +11,16 @@ training:
   val_fraction: 0.1
   batch_size: 16
   epochs: 250
-  loss: "aam"
+  loss: "arc"
   val_every: 25 # epochs
 
 loss:
-  mam:
+  sphere:
     margin: 4
-    scale: 64
-  acm:
+  cos:
     margin: 0.2
     scale: 64
-  aam:
+  arc:
     margin: 0.2
     scale: 30
 
