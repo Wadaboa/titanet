@@ -113,7 +113,7 @@ def get_datasets(
     val_utterances = []
     for s in remaining_speakers:
         min_utterance = test_utterances_per_speaker if s < test_speakers else 0
-        val_utterances += [utterances[s][min_utterance:]]
+        val_utterances += utterances[s][min_utterance:]
 
     # Split dataset by speakers
     return (
