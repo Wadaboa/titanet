@@ -434,14 +434,14 @@ def scheduler_to(scheduler, device="cpu"):
     return scheduler
 
 
-def chart_dependencies(model, n_mels=80):
+def chart_dependencies(model, n_mels=80, device="cpu"):
     """
     Use backprop to chart dependencies
     (see http://karpathy.github.io/2019/04/25/recipe/)
     """
     model.eval()
     batch_size, time_steps = random.randint(2, 10), random.randint(10, 100)
-    inputs = torch.randn((batch_size, n_mels, time_steps))
+    inputs = torch.randn((batch_size, n_mels, time_steps)).to(device)
     inputs.requires_grad = True
     outputs = model(inputs)
     random_index = random.randint(0, batch_size)

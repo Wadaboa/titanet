@@ -265,7 +265,10 @@ def train(params):
         )
 
     # Use backprop to chart dependencies
-    utils.chart_dependencies(model)
+    if params.generic.chart_dependencies:
+        utils.chart_dependencies(
+            model, n_mels=params.audio.spectrogram.n_mels, device=device
+        )
 
     # Get optimizer and scheduler
     optimizer = optim.SGD(model.parameters(), lr=params.training.learning_rate)

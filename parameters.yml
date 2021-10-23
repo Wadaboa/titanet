@@ -52,6 +52,7 @@ generic:
   seed: 42
   workers: 0
   log_console: false
+  chart_dependencies: false
 
 audio:
   sample_rate: 16000
