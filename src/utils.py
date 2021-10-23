@@ -432,3 +432,23 @@ def scheduler_to(scheduler, device="cpu"):
             if param._grad is not None:
                 param._grad.data = param._grad.data.to(device)
     return scheduler
+
+
+def chart_dependencies(model, n_mels=80):
+    """
+    Use backprop to chart dependencies
+    (see http://karpathy.github.io/2019/04/25/recipe/)
+    """
+    model.eval()
+    batch_size, time_steps = random.randint(2, 10), random.randint(10, 100)
+    inputs = torch.randn((batch_size, n_mels, time_steps))
+    inputs.requires_grad = True
+    outputs = model(inputs)
+    random_index = random.randint(0, batch_size)
+    loss = outputs[random_index].sum()
+    loss.backward()
+    assert (
+        torch.cat([inputs.grad[i] == 0 for i in range(batch_size) if i != random_index])
+    ).all() and (
+        inputs.grad[random_index] != 0
+    ).any(), f"Only index {random_index} should have non-zero gradients"

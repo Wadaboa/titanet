@@ -79,6 +79,7 @@ class TitaNet(nn.Module):
         prolog_kernel_size=3,
         epilog_kernel_size=1,
         se_reduction=16,
+        simple_pool=False,
         dropout=0.5,
         device="cpu",
     ):
@@ -97,7 +98,9 @@ class TitaNet(nn.Module):
             se_reduction=se_reduction,
             dropout=dropout,
         )
-        self.decoder = Decoder(encoder_output_size, embedding_size)
+        self.decoder = Decoder(
+            encoder_output_size, embedding_size, simple_pool=simple_pool
+        )
 
         # Store loss function
         self.loss_function = loss_function
@@ -156,6 +159,8 @@ class TitaNet(nn.Module):
         n_mels=80,
         n_mega_blocks=None,
         model_size="s",
+        simple_pool=False,
+        dropout=0.5,
         device="cpu",
     ):
         """
@@ -186,6 +191,8 @@ class TitaNet(nn.Module):
             n_sub_blocks=3,
             encoder_output_size=1536,
             embedding_size=embedding_size,
+            simple_pool=simple_pool,
+            dropout=dropout,
             device=device,
         )
 
@@ -361,14 +368,21 @@ class Decoder(nn.Module):
     https://arxiv.org/abs/2110.04410
     """
 
-    def __init__(self, encoder_output_size, embedding_size):
+    def __init__(self, encoder_output_size, embedding_size, simple_pool=False):
         super(Decoder, self).__init__()
 
-        # Define the attention layer
-        self.attention = nn.Sequential(
-            AttentiveStatsPooling(encoder_output_size),
-            nn.BatchNorm1d(encoder_output_size * 2),
-        )
+        # Define the attention/pooling layer
+        if simple_pool:
+            self.pool = nn.Sequential(
+                nn.AdaptiveAvgPool1d(1),
+                modules.Squeeze(-1),
+                nn.Linear(encoder_output_size, encoder_output_size * 2),
+            )
+        else:
+            self.pool = nn.Sequential(
+                AttentiveStatsPooling(encoder_output_size),
+                nn.BatchNorm1d(encoder_output_size * 2),
+            )
 
         # Define the final classifier
         self.linear = nn.Sequential(
@@ -387,10 +401,10 @@ class Decoder(nn.Module):
         E: embedding size
         """
         # [B, DE, T] -> [B, DE * 2]
-        attention_context = self.attention(encodings)
+        pooled = self.pool(encodings)
 
         # [B, DE * 2] -> [B, E]
-        return self.linear(attention_context)
+        return self.linear(pooled)
 
 
 class AttentiveStatsPooling(nn.Module):

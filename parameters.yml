@@ -37,7 +37,9 @@ loss:
 titanet:
   embedding_size: 192
   model_size: "s"
-  n_mega_blocks: false
+  n_mega_blocks: 1
+  simple_pool: true
+  dropout: 0.5
 
 wandb:
   enabled: false

@@ -187,3 +187,16 @@ class SqueezeExcitation(nn.Module):
 
         # [B, C] -> [B, C, W]
         return inputs * excited.expand_as(inputs)
+
+
+class Squeeze(nn.Module):
+    """
+    Remove dimensions of size 1 from the input tensor
+    """
+
+    def __init__(self, dim=None):
+        super(Squeeze, self).__init__()
+        self.dim = dim
+
+    def forward(self, inputs):
+        return inputs.squeeze(self.dim)

@@ -252,14 +252,19 @@ def train(params):
         n_mega_blocks = None
         if params.titanet.n_mega_blocks:
             n_mega_blocks = params.titanet.n_mega_blocks
-        model = models.get_titanet(
+        model = models.TitaNet.get_titanet(
             loss_function,
             embedding_size=params.titanet.embedding_size,
             n_mels=params.audio.spectrogram.n_mels,
             n_mega_blocks=n_mega_blocks,
             model_size=params.titanet.model_size,
+            simple_pool=params.titanet.simple_pool,
+            dropout=params.titanet.dropout,
             device=device,
         )
+
+    # Use backprop to chart dependencies
+    utils.chart_dependencies(model)
 
     # Get optimizer and scheduler
     optimizer = optim.SGD(model.parameters(), lr=params.training.learning_rate)
