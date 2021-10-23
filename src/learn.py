@@ -131,6 +131,7 @@ def train_one_epoch(
             epoch_targets,
             show=False,
             save=figure_path,
+            only_centroids=False,
         )
         if wandb_run is not None:
             metrics["train/embeddings"] = wandb.Image(figure_path)
@@ -330,6 +331,7 @@ def evaluate(
             epoch_targets,
             show=False,
             save=figure_path,
+            only_centroids=False,
         )
         if wandb_run is not None:
             metrics[f"val/embeddings"] = wandb.Image(figure_path)

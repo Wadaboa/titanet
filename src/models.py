@@ -78,6 +78,7 @@ class TitaNet(nn.Module):
         mega_block_kernel_size,
         prolog_kernel_size=3,
         epilog_kernel_size=1,
+        attention_hidden_size=128,
         se_reduction=16,
         simple_pool=False,
         dropout=0.5,
@@ -99,7 +100,10 @@ class TitaNet(nn.Module):
             dropout=dropout,
         )
         self.decoder = Decoder(
-            encoder_output_size, embedding_size, simple_pool=simple_pool
+            encoder_output_size,
+            attention_hidden_size,
+            embedding_size,
+            simple_pool=simple_pool,
         )
 
         # Store loss function
@@ -159,6 +163,7 @@ class TitaNet(nn.Module):
         n_mels=80,
         n_mega_blocks=None,
         model_size="s",
+        attention_hidden_size=128,
         simple_pool=False,
         dropout=0.5,
         device="cpu",
@@ -191,6 +196,7 @@ class TitaNet(nn.Module):
             n_sub_blocks=3,
             encoder_output_size=1536,
             embedding_size=embedding_size,
+            attention_hidden_size=attention_hidden_size,
             simple_pool=simple_pool,
             dropout=dropout,
             device=device,
@@ -294,7 +300,6 @@ class MegaBlock(nn.Module):
     the output of the sequence of sub-blocks is then processed by a SE
     module and merged with the initial input through a skip connection
 
-
     "TitaNet: Neural Model for speaker representation with 1D Depth-wise
     separable convolutions and global context", Kologuri et al.,
     https://arxiv.org/abs/2110.04410
@@ -362,13 +367,18 @@ class Decoder(nn.Module):
     representation using two linear layers, to obtain a fixed-size
     embedding vector first and class logits afterwards
 
-
     "TitaNet: Neural Model for speaker representation with 1D Depth-wise
     separable convolutions and global context", Kologuri et al.,
     https://arxiv.org/abs/2110.04410
     """
 
-    def __init__(self, encoder_output_size, embedding_size, simple_pool=False):
+    def __init__(
+        self,
+        encoder_output_size,
+        attention_hidden_size,
+        embedding_size,
+        simple_pool=False,
+    ):
         super(Decoder, self).__init__()
 
         # Define the attention/pooling layer
@@ -380,7 +390,7 @@ class Decoder(nn.Module):
             )
         else:
             self.pool = nn.Sequential(
-                AttentiveStatsPooling(encoder_output_size),
+                AttentiveStatsPooling(encoder_output_size, attention_hidden_size),
                 nn.BatchNorm1d(encoder_output_size * 2),
             )
 
@@ -414,55 +424,49 @@ class AttentiveStatsPooling(nn.Module):
     generates not only weighted means but also weighted variances,
     to form utterance-level features from frame-level features
 
-
     "Attentive Statistics Pooling for Deep Speaker Embedding",
     Okabe et al., https://arxiv.org/abs/1803.10963
     """
 
-    def __init__(self, input_size, activation="relu"):
+    def __init__(self, input_size, hidden_size, eps=1e-6):
         super(AttentiveStatsPooling, self).__init__()
 
         # Store attributes
-        self.input_size = input_size
+        self.eps = eps
 
         # Define architecture
-        self.linear = nn.Linear(input_size, input_size)
-        self.activation = nn.ReLU() if activation == "relu" else nn.Tanh()
-        self.scores_w = nn.Parameter(torch.randn(input_size))
-        self.scores_b = nn.Parameter(torch.zeros(1))
+        self.in_linear = nn.Linear(input_size, hidden_size)
+        self.out_linear = nn.Linear(hidden_size, input_size)
 
     def forward(self, encodings):
         """
         Given encoder outputs of shape [B, DE, T], return
-        an attention context of shape [B, DE * 2]
+        pooled outputs of shape [B, DE * 2]
 
         B: batch size
         T: maximum number of time steps (frames)
         DE: encoding output size
         """
-        # Transpose input encodings
-        # [B, DE, T] -> [B, T, DE]
-        encodings = encodings.transpose(1, 2)
-        batch_size, _, _ = encodings.shape
+        # Compute a scalar score for each frame-level feature
+        # [B, DE, T] -> [B, DE, T]
+        energies = self.out_linear(
+            torch.tanh(self.in_linear(encodings.transpose(1, 2)))
+        ).transpose(1, 2)
 
-        # Compute attention scores of shape [B, T]
-        projection = self.activation(self.linear(encodings))
-        scores_w = (
-            self.scores_w.unsqueeze(0).expand(batch_size, self.input_size).unsqueeze(2)
-        )
-        scores = projection.bmm(scores_w).squeeze(-1) + self.scores_b
+        # Normalize scores over all frames by a softmax function
+        # [B, DE, T] -> [B, DE, T]
+        alphas = torch.softmax(energies, dim=2)
 
-        # Compute attention weights of shape [B, T]
-        weights = F.softmax(scores, dim=1)
+        # Compute mean vector weighted by normalized scores
+        # [B, DE, T] -> [B, DE]
+        means = torch.sum(alphas * encodings, dim=2)
 
-        # Compute attention context of shape [B, T, DE]
-        context = encodings * weights.unsqueeze(2).expand(-1, -1, self.input_size)
+        # Compute std vector weighted by normalized scores
+        # [B, DE, T] -> [B, DE]
+        residuals = torch.sum(alphas * encodings ** 2, dim=2) - means ** 2
+        stds = torch.sqrt(residuals.clamp(min=self.eps))
 
-        # Compute pooling statistics (mean and variance)
-        # each one of shape [B, DE]
-        mean = torch.mean(context, dim=1)
-        std = torch.sum(encodings * context, dim=1) - mean * mean
-
-        # Return the concatenation of pooling statistics
-        # of shape [B, DE * 2]
-        return torch.cat((mean, std), dim=1)
+        # Concatenate mean and std vectors to produce
+        # utterance-level features
+        # [[B, DE]; [B, DE]] -> [B, DE * 2]
+        return torch.cat([means, stds], dim=1)

@@ -258,6 +258,7 @@ def train(params):
             n_mels=params.audio.spectrogram.n_mels,
             n_mega_blocks=n_mega_blocks,
             model_size=params.titanet.model_size,
+            attention_hidden_size=params.titanet.attention_hidden_size,
             simple_pool=params.titanet.simple_pool,
             dropout=params.titanet.dropout,
             device=device,

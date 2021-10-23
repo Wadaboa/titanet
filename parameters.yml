@@ -3,18 +3,18 @@ dataset:
 
 training:
   dumb:
-    enabled: true
+    enabled: false
     n_layers: 10
   learning_rate: 0.08
   lr_scheduler: false
   checkpoints_path: "./checkpoints"
   figures_path: "./figures"
-  checkpoints_frequency: 50 # epochs
+  checkpoints_frequency: 25 # epochs
   train_fraction: 0.8
-  batch_size: 32
+  batch_size: 16
   epochs: 250
   loss: "ce"
-  val_every: false # epochs
+  val_every: 25 # epochs
 
 test:
   enabled: true
@@ -37,12 +37,13 @@ loss:
 titanet:
   embedding_size: 192
   model_size: "s"
-  n_mega_blocks: 1
-  simple_pool: true
-  dropout: 0.5
+  n_mega_blocks: false
+  attention_hidden_size: 128
+  simple_pool: false
+  dropout: 0.2
 
 wandb:
-  enabled: false
+  enabled: true
   entity: "wadaboa"
   project: "titanet"
   api_key_file: "./init/wandb_api_key_file"
@@ -50,7 +51,7 @@ wandb:
 generic:
   seed: 42
   workers: 0
-  log_console: true
+  log_console: false
 
 audio:
   sample_rate: 16000
