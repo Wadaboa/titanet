@@ -6,15 +6,15 @@ training:
     enabled: false
     n_layers: 10
   learning_rate: 0.08
-  lr_scheduler: false
+  lr_scheduler: true
   checkpoints_path: "./checkpoints"
   figures_path: "./figures"
   checkpoints_frequency: 25 # epochs
   train_fraction: 0.8
-  batch_size: 16
+  batch_size: 8
   epochs: 250
-  loss: "ce"
-  val_every: 25 # epochs
+  loss: "arc"
+  val_every: 2 # epochs
 
 test:
   enabled: true
@@ -40,7 +40,7 @@ titanet:
   n_mega_blocks: false
   attention_hidden_size: 128
   simple_pool: false
-  dropout: 0.2
+  dropout: 0.5
 
 wandb:
   enabled: true
@@ -62,7 +62,7 @@ audio:
     hop_length: 10 # ms
     n_mels: 80
   augmentation:
-    enabled: false
+    enabled: true
     rir_corpora_path: "./data/rirs"
     max_length: 3 # s
     chunk_lengths:

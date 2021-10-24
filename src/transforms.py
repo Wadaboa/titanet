@@ -212,9 +212,10 @@ class Reverb:
             waveform = torch.nn.functional.pad(
                 new_example["waveform"], (rir.shape[1] - 1, 0)
             )
-            new_example["waveform"] = torch.nn.functional.conv1d(
-                waveform[None, :, :], rir[None, :, :]
-            )[0]
+            if waveform.size(0) == rir.size(0):
+                new_example["waveform"] = torch.nn.functional.conv1d(
+                    waveform[None, :, :], rir[None, :, :]
+                )[0]
 
         return new_example
 

@@ -13,3 +13,4 @@ wandb==0.12.4
 jupyter==1.0.0
 requests==2.26.0
 rich==10.12.0
+umap-learn==0.5.1

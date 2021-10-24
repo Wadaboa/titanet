@@ -9,6 +9,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import IPython.display as ipd
 import wandb
+import umap
 from sklearn.manifold import TSNE
 from sklearn.decomposition import TruncatedSVD
 from scipy.spatial import ConvexHull
@@ -63,7 +64,7 @@ def visualize_embeddings(
     embeddings,
     labels,
     labels_mapping=None,
-    reduction_method="svd",
+    reduction_method="umap",
     remove_outliers=False,
     only_centroids=True,
     convex_hull=False,
@@ -170,16 +171,20 @@ def visualize_embeddings(
         plt.close(fig)
 
 
-def reduce(embeddings, n_components=2, reduction_method="svd", seed=42):
+def reduce(embeddings, n_components=2, reduction_method="umap", seed=42):
     """
     Applies the selected dimensionality reduction technique
     to the given input data
     """
-    assert reduction_method in ("svd", "tsne"), "Unsupported reduction method"
+    assert reduction_method in ("svd", "tsne", "umap"), "Unsupported reduction method"
     if reduction_method == "svd":
         reducer = TruncatedSVD(n_components=n_components, random_state=seed)
     elif reduction_method == "tsne":
         reducer = TSNE(n_components=n_components, metric="cosine", random_state=seed)
+    elif reduction_method == "umap":
+        reducer = umap.UMAP(
+            n_components=n_components, metric="cosine", random_state=seed
+        )
     return reducer.fit_transform(embeddings)
 
 

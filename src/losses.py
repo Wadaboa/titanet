@@ -39,6 +39,7 @@ class CELoss(MetricLearningLoss):
         logits = self.fc(inputs)
         preds = torch.argmax(logits, dim=1)
         loss = F.cross_entropy(logits, targets)
+        inputs = F.normalize(inputs, p=2, dim=1)
         return inputs, preds, loss
 
 
@@ -117,7 +118,7 @@ class AngularMarginLoss(MetricLearningLoss):
         # Compute cross-entropy loss
         loss = -torch.mean(numerator - torch.log(denominator + self.eps))
 
-        return inputs, preds, loss
+        return normalized_inputs, preds, loss
 
 
 class SphereFaceLoss(AngularMarginLoss):

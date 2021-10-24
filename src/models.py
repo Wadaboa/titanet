@@ -49,7 +49,7 @@ class DumbConvNet(nn.Module):
         embeddings = self.fc(encodings.transpose(1, 2))
         embeddings = self.pool(embeddings.transpose(1, 2)).squeeze(-1)
         if speakers is None:
-            return embeddings
+            return F.normalize(embeddings, p=2, dim=1)
         return self.loss_function(embeddings, speakers)
 
 
@@ -223,7 +223,7 @@ class TitaNet(nn.Module):
         encodings = self.encoder(spectrograms)
         embeddings = self.decoder(encodings)
         if speakers is None:
-            return embeddings
+            return F.normalize(embeddings, p=2, dim=1)
         return self.loss_function(embeddings, speakers)
 
 
