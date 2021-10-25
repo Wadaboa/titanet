@@ -15,6 +15,7 @@ training:
   epochs: 100
   loss: "arc"
   val_every: 2 # epochs
+  reduction_method: "svd"
 
 test:
   enabled: true

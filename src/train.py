@@ -129,6 +129,9 @@ def train(params):
     utils.set_seed(params.generic.seed)
     device = utils.get_device()
 
+    # Set number of threads
+    torch.set_num_threads(params.generic.workers)
+
     # Get data transformations
     transformations = transforms.get_transforms(
         params.augmentation.enable,
@@ -234,6 +237,7 @@ def train(params):
         val_dataloader=val_dataloader,
         val_every=params.training.val_every or None,
         figures_path=params.training.figures_path,
+        reduction_method=params.training.reduction_method,
         lr_scheduler=lr_scheduler,
         checkpoints_frequency=params.training.checkpoints_frequency,
         wandb_run=wandb_run,
