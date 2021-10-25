@@ -52,26 +52,21 @@ def get_transforms(
             Reverb(rir_corpora_path, probability=probability, device=device)
         ]
     transformations += [
-        NormalizedMelSpectrogram(
+        MelSpectrogram(
             sample_rate,
             n_fft=n_fft,
             win_length=int(win_length / 1000 * sample_rate),
             hop_length=int(hop_length / 1000 * sample_rate),
             n_mels=n_mels,
+            specaugment_min_speed=min_speed,
+            specaugment_max_speed=max_speed,
+            specaugment_freq_mask_param=freq_mask_param,
+            specaugment_freq_mask_num=freq_mask_num,
+            specaugment_time_mask_param=time_mask_param,
+            specaugment_time_mask_num=time_mask_num,
+            specaugment_probability=probability if "specaugment" in enabled else 0.0,
         )
     ]
-    if "specaugment" in enabled:
-        transformations += [
-            SpecAugment(
-                min_speed,
-                max_speed,
-                freq_mask_param=freq_mask_param,
-                freq_mask_num=freq_mask_num,
-                time_mask_param=time_mask_param,
-                time_mask_num=time_mask_num,
-                probability=probability,
-            )
-        ]
     return transformations
 
 
@@ -81,12 +76,7 @@ class SpeedPerturbation:
     with the speed ranges specified in input
     """
 
-    def __init__(
-        self,
-        min_speed,
-        max_speed,
-        probability=1.0,
-    ):
+    def __init__(self, min_speed, max_speed, probability=1.0):
         self.min_speed = min_speed
         self.max_speed = max_speed
         self.probability = probability
@@ -113,23 +103,92 @@ class SpeedPerturbation:
         return new_example
 
 
-class NormalizedMelSpectrogram(torchaudio.transforms.MelSpectrogram):
+class MelSpectrogram:
     """
-    Compute mel-spectrograms from input waveforms, then transform
-    amplitudes to decibels and normalize over the frequency dimension
+    Compute mel-spectrograms from input waveforms, possibly compute
+    the SpecAugment transform and then transform amplitudes to decibels
+    and normalize over the frequency dimension
     """
 
-    def __init__(self, *args, **kwargs):
-        super(NormalizedMelSpectrogram, self).__init__(*args, **kwargs)
+    def __init__(
+        self,
+        sample_rate,
+        n_fft=400,
+        win_length=None,
+        hop_length=None,
+        n_mels=128,
+        specaugment_min_speed=0.95,
+        specaugment_max_speed=1.05,
+        specaugment_freq_mask_param=50,
+        specaugment_freq_mask_num=1,
+        specaugment_time_mask_param=40,
+        specaugment_time_mask_num=1,
+        specaugment_probability=1.0,
+    ):
+        # Spectrogram parameters
+        self.spectrogram = torchaudio.transforms.Spectrogram(
+            n_fft=n_fft,
+            win_length=win_length,
+            hop_length=hop_length,
+            power=None,
+            return_complex=True,
+        )
         self.amplitude_to_db = torchaudio.transforms.AmplitudeToDB()
+        self.mel_scale = torchaudio.transforms.MelScale(
+            n_mels=n_mels, sample_rate=sample_rate, n_stft=n_fft // 2 + 1
+        )
 
-    def forward(self, example):
+        # SpecAugment parameters
+        self.specaugment_min_speed = specaugment_min_speed
+        self.specaugment_max_speed = specaugment_max_speed
+        self.specaugment_freq_mask_num = specaugment_freq_mask_num
+        self.specaugment_time_mask_num = specaugment_time_mask_num
+        self.specaugment_probability = specaugment_probability
+        self.time_stretching = torchaudio.transforms.TimeStretch(
+            hop_length=hop_length, n_freq=n_fft // 2 + 1
+        )
+        self.frequency_masking = torchaudio.transforms.FrequencyMasking(
+            freq_mask_param=specaugment_freq_mask_param, iid_masks=True
+        )
+        self.time_masking = torchaudio.transforms.TimeMasking(
+            time_mask_param=specaugment_time_mask_param, iid_masks=True
+        )
+
+    def __call__(self, example):
         assert (
             isinstance(example, dict) and "waveform" in example
         ), "Wrong input structure"
 
+        # Convert waveform to spectrogram
         new_example = copy_example(example)
-        new_example["spectrogram"] = super().forward(new_example["waveform"])
+        new_example["spectrogram"] = self.spectrogram(new_example["waveform"])
+
+        # Possibly apply the SpecAugment transform
+        apply_specaugment = random.random() < self.specaugment_probability
+        if apply_specaugment:
+            time_stretch = random.uniform(
+                self.specaugment_min_speed, self.specaugment_max_speed
+            )
+            new_example["spectrogram"] = self.time_stretching(
+                new_example["spectrogram"], time_stretch
+            )
+            new_example["spectrogram"] = new_example["spectrogram"].abs() ** 2
+            for _ in range(self.specaugment_freq_mask_num):
+                new_example["spectrogram"] = self.frequency_masking(
+                    new_example["spectrogram"]
+                )
+            for _ in range(self.specaugment_time_mask_num):
+                new_example["spectrogram"] = self.time_masking(
+                    new_example["spectrogram"]
+                )
+
+        # Convert from complex to real domain (if not already done by SpecAugment)
+        if not apply_specaugment:
+            new_example["spectrogram"] = new_example["spectrogram"].abs() ** 2
+
+        # Convert to mel scale, convert from amplitude to decibels and
+        # normalize over the frequency dimension
+        new_example["spectrogram"] = self.mel_scale(new_example["spectrogram"])
         new_example["spectrogram"] = self.amplitude_to_db(new_example["spectrogram"])
         new_example["spectrogram"] = F.normalize(new_example["spectrogram"], dim=1)
 
@@ -162,59 +221,6 @@ class RandomChunk:
             new_example["waveform"] = new_example["waveform"][
                 :, start : start + samples
             ]
-
-        return new_example
-
-
-class SpecAugment:
-    """
-    Apply SpecAugment data augmentation, by randomly
-    masking the frequency and/or time axes of the
-    given mel-spectrogram
-    """
-
-    def __init__(
-        self,
-        min_time_stretch,
-        max_time_stretch,
-        freq_mask_param=100,
-        freq_mask_num=1,
-        time_mask_param=80,
-        time_mask_num=1,
-        probability=1.0,
-    ):
-        self.min_time_stretch = min_time_stretch
-        self.max_time_stretch = max_time_stretch
-        self.freq_mask_num = freq_mask_num
-        self.time_mask_num = time_mask_num
-        self.probability = probability
-        self.time_stretching = torchaudio.transforms.TimeStretch()
-        self.frequency_masking = torchaudio.transforms.FrequencyMasking(
-            freq_mask_param=freq_mask_param, iid_masks=True
-        )
-        self.time_masking = torchaudio.transforms.TimeMasking(
-            time_mask_param=time_mask_param, iid_masks=True
-        )
-
-    def __call__(self, example):
-        assert (
-            isinstance(example, dict) and "spectrogram" in example
-        ), "Wrong input structure"
-
-        new_example = copy_example(example)
-        if random.random() < self.probability:
-            time_stretch = random.uniform(self.min_time_stretch, self.max_time_stretch)
-            new_example["spectrogram"] = self.time_stretching(
-                new_example["spectrogram"], time_stretch
-            )
-            for _ in range(self.freq_mask_num):
-                new_example["spectrogram"] = self.frequency_masking(
-                    new_example["spectrogram"]
-                )
-            for _ in range(self.time_mask_num):
-                new_example["spectrogram"] = self.time_masking(
-                    new_example["spectrogram"]
-                )
 
         return new_example
 
