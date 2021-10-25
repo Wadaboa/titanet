@@ -8,7 +8,7 @@ import numpy as np
 from tqdm import tqdm
 
 
-def collate_fn(batch, n_mels=80, device="cpu"):
+def collate_fn(batch, n_mels=80):
     """
     Convert a list of samples extracted from the dataset to
     a proper batch, i.e. a tuple of stacked tensors
@@ -20,16 +20,16 @@ def collate_fn(batch, n_mels=80, device="cpu"):
         speakers.append(example["speaker_id"])
 
     # Convert collected lists to tensors
-    spectrogram_lengths = torch.LongTensor(spectrogram_lengths).to(device)
-    speakers = torch.LongTensor(speakers).to(device)
+    spectrogram_lengths = torch.LongTensor(spectrogram_lengths)
+    speakers = torch.LongTensor(speakers)
 
     # Fill tensors up to the maximum length
     spectrograms = torch.zeros(
-        len(batch), n_mels, max(spectrogram_lengths), dtype=torch.float, device=device
+        len(batch), n_mels, max(spectrogram_lengths), dtype=torch.float32
     )
     for i, example in enumerate(batch):
-        spectrograms[i, :, : spectrogram_lengths[i]] = (
-            example["spectrogram"].to(device).to(torch.float32)
+        spectrograms[i, :, : spectrogram_lengths[i]] = example["spectrogram"].to(
+            torch.float32
         )
 
     # Return a batch of tensors

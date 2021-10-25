@@ -12,7 +12,7 @@ training:
   checkpoints_frequency: 25 # epochs
   train_fraction: 0.8
   batch_size: 8
-  epochs: 250
+  epochs: 100
   loss: "arc"
   val_every: 2 # epochs
 
@@ -43,14 +43,14 @@ titanet:
   dropout: 0.5
 
 wandb:
-  enabled: true
+  enabled: false
   entity: "wadaboa"
   project: "titanet"
   api_key_file: "./init/wandb_api_key_file"
 
 generic:
   seed: 42
-  workers: 0
+  workers: 4
   log_console: false
   chart_dependencies: false
 
@@ -61,18 +61,21 @@ audio:
     win_length: 25 # ms
     hop_length: 10 # ms
     n_mels: 80
-  augmentation:
-    enabled: true
-    rir_corpora_path: "./data/rirs"
-    max_length: 3 # s
-    chunk_lengths:
-      - 1.5
-      - 2
-      - 3
-    min_speed: 0.95
-    max_speed: 1.05
-    freq_mask_param: 100
-    freq_mask_num: 1
-    time_mask_param: 80
-    time_mask_num: 1
-    probability: 1.0
+
+augmentation:
+  rir_corpora_path: "./data/rirs"
+  enable:
+    - "chunk"
+    - "specaugment"
+  max_length: 3 # s
+  chunk_lengths:
+    - 1.5
+    - 2
+    - 3
+  min_speed: 0.95
+  max_speed: 1.05
+  freq_mask_param: 100
+  freq_mask_num: 1
+  time_mask_param: 80
+  time_mask_num: 1
+  probability: 0.5

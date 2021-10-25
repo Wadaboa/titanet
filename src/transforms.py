@@ -22,6 +22,59 @@ def copy_example(example):
     return new_example
 
 
+def get_transforms(
+    enabled,
+    rir_corpora_path,
+    max_length=3,
+    chunk_lengths=[1.5, 2, 3],
+    min_speed=0.95,
+    max_speed=1.05,
+    sample_rate=16000,
+    n_fft=512,
+    win_length=25,
+    hop_length=10,
+    n_mels=80,
+    freq_mask_param=100,
+    freq_mask_num=1,
+    time_mask_param=80,
+    time_mask_num=1,
+    probability=1.0,
+    device="cpu",
+):
+    """
+    Return the list of transformations described in TitaNet paper
+    """
+    transformations = [Resample(sample_rate)]
+    if "chunk" in enabled:
+        transformations += [RandomChunk(max_length, chunk_lengths)]
+    if "reverb" in enabled:
+        transformations += [
+            Reverb(rir_corpora_path, probability=probability, device=device)
+        ]
+    transformations += [
+        NormalizedMelSpectrogram(
+            sample_rate,
+            n_fft=n_fft,
+            win_length=int(win_length / 1000 * sample_rate),
+            hop_length=int(hop_length / 1000 * sample_rate),
+            n_mels=n_mels,
+        )
+    ]
+    if "specaugment" in enabled:
+        transformations += [
+            SpecAugment(
+                min_speed,
+                max_speed,
+                freq_mask_param=freq_mask_param,
+                freq_mask_num=freq_mask_num,
+                time_mask_param=time_mask_param,
+                time_mask_num=time_mask_num,
+                probability=probability,
+            )
+        ]
+    return transformations
+
+
 class SpeedPerturbation:
     """
     Randomly change the speed of the given waveform,
@@ -54,7 +107,7 @@ class SpeedPerturbation:
             ) = torchaudio.sox_effects.apply_effects_tensor(
                 new_example["waveform"],
                 new_example["sample_rate"],
-                [["speed", str(speed)]],
+                [["speed", str(speed)], ["rate", str(new_example["sample_rate"])]],
             )
 
         return new_example
@@ -117,20 +170,25 @@ class SpecAugment:
     """
     Apply SpecAugment data augmentation, by randomly
     masking the frequency and/or time axes of the
-    given mel-spectrogram (no time stretch)
+    given mel-spectrogram
     """
 
     def __init__(
         self,
+        min_time_stretch,
+        max_time_stretch,
         freq_mask_param=100,
         freq_mask_num=1,
         time_mask_param=80,
         time_mask_num=1,
         probability=1.0,
     ):
+        self.min_time_stretch = min_time_stretch
+        self.max_time_stretch = max_time_stretch
         self.freq_mask_num = freq_mask_num
         self.time_mask_num = time_mask_num
         self.probability = probability
+        self.time_stretching = torchaudio.transforms.TimeStretch()
         self.frequency_masking = torchaudio.transforms.FrequencyMasking(
             freq_mask_param=freq_mask_param, iid_masks=True
         )
@@ -145,6 +203,10 @@ class SpecAugment:
 
         new_example = copy_example(example)
         if random.random() < self.probability:
+            time_stretch = random.uniform(self.min_time_stretch, self.max_time_stretch)
+            new_example["spectrogram"] = self.time_stretching(
+                new_example["spectrogram"], time_stretch
+            )
             for _ in range(self.freq_mask_num):
                 new_example["spectrogram"] = self.frequency_masking(
                     new_example["spectrogram"]
@@ -165,9 +227,10 @@ class Reverb:
 
     RIR_CORPORA_URL = "https://www.openslr.org/resources/28/rirs_noises.zip"
 
-    def __init__(self, rir_corpora_path, probability=1.0):
+    def __init__(self, rir_corpora_path, probability=1.0, device="cpu"):
         self.rir_corpora_path = rir_corpora_path
         self.probability = probability
+        self.device = device
         if not os.path.exists(rir_corpora_path):
             self._download_rir_corpora()
         self.rir_files = list(Path(self.rir_corpora_path).rglob("*.wav"))
@@ -202,6 +265,7 @@ class Reverb:
             sr = new_example["sample_rate"]
             rir_file = random.choice(self.rir_files)
             rir, rir_sr = torchaudio.load(rir_file)
+            rir = rir.to(self.device)
             rir = torchaudio.functional.resample(rir, orig_freq=rir_sr, new_freq=sr)
 
             # Clean up the RIR: normalize the signal power and then flip the time axis

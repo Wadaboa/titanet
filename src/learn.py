@@ -67,6 +67,7 @@ def train_one_epoch(
     figures_path=None,
     wandb_run=None,
     log_console=True,
+    device="cpu",
 ):
     """
     Train the given model for one epoch with the given dataloader and optimizer
@@ -75,13 +76,15 @@ def train_one_epoch(
     model.train()
 
     # For each batch
-    epoch_loss, epoch_time = 0, 0
+    epoch_loss, epoch_time, step = 0, 0, 1
     epoch_preds, epoch_targets, epoch_embeddings = [], [], []
-    for step, (spectrograms, _, speakers) in enumerate(dataloader):
+    for spectrograms, _, speakers in dataloader:
 
         # Get model outputs
         model_time = time.time()
-        embeddings, preds, loss = model(spectrograms, speakers=speakers)
+        embeddings, preds, loss = model(
+            spectrograms.to(device), speakers=speakers.to(device)
+        )
         model_time = time.time() - model_time
 
         # Log to console
@@ -112,6 +115,13 @@ def train_one_epoch(
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+
+        # Empty CUDA cache
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        # Increment step
+        step += 1
 
     # Get metrics
     metrics = utils.get_train_val_metrics(epoch_targets, epoch_preds, prefix="train")
@@ -211,6 +221,7 @@ def training_loop(
             figures_path=figures_path,
             wandb_run=wandb_run,
             log_console=log_console,
+            device=device,
         )
 
         # Decay the learning rate
@@ -242,6 +253,7 @@ def training_loop(
                 figures_path=figures_path,
                 wandb_run=wandb_run,
                 log_console=log_console,
+                device=device,
             )
 
     # Always save the last checkpoint
@@ -277,6 +289,7 @@ def evaluate(
     figures_path=None,
     wandb_run=None,
     log_console=True,
+    device="cpu",
 ):
     """
     Evaluate the given model for one epoch with the given dataloader
@@ -285,13 +298,15 @@ def evaluate(
     model.eval()
 
     # For each batch
-    epoch_loss, epoch_time = 0, 0
+    epoch_loss, epoch_time, step = 0, 0, 1
     epoch_preds, epoch_targets, epoch_embeddings = [], [], []
-    for step, (spectrograms, _, speakers) in enumerate(dataloader):
+    for spectrograms, _, speakers in dataloader:
 
         # Get model outputs
         model_time = time.time()
-        embeddings, preds, loss = model(spectrograms, speakers=speakers)
+        embeddings, preds, loss = model(
+            spectrograms.to(device), speakers=speakers.to(device)
+        )
         model_time = time.time() - model_time
 
         # Log to console
@@ -312,6 +327,13 @@ def evaluate(
         epoch_preds += preds.detach().cpu().tolist()
         epoch_targets += speakers.detach().cpu().tolist()
         epoch_embeddings += embeddings
+
+        # Empty CUDA cache
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        # Increment step
+        step += 1
 
     # Get metrics and return them
     metrics = utils.get_train_val_metrics(epoch_targets, epoch_preds, prefix="val")
@@ -369,7 +391,7 @@ def test(
     scores, labels = [], []
     for s1, s2, label in tqdm(samples, desc="Building scores and labels"):
         e1, e2 = model(s1), model(s2)
-        scores += [F.cosine_similarity(e1, e2).cpu().item()]
+        scores += [F.cosine_similarity(e1, e2).item()]
         labels += [int(label)]
 
     # Get test metrics (EER and minDCF)

@@ -10,69 +10,9 @@ import yaml
 import datasets, transforms, models, learn, losses, utils
 
 
-def get_simple_transforms(
-    sample_rate=16000, n_fft=512, win_length=25, hop_length=10, n_mels=80
-):
-    """
-    Return only the mel-spectrogram transform
-    """
-    return [
-        transforms.Resample(sample_rate),
-        transforms.NormalizedMelSpectrogram(
-            sample_rate,
-            n_fft=n_fft,
-            win_length=int(win_length / 1000 * sample_rate),
-            hop_length=int(hop_length / 1000 * sample_rate),
-            n_mels=n_mels,
-        ),
-    ]
-
-
-def get_transforms(
-    rir_corpora_path,
-    max_length=3,
-    chunk_lengths=[1.5, 2, 3],
-    min_speed=0.95,
-    max_speed=1.05,
-    sample_rate=16000,
-    n_fft=512,
-    win_length=25,
-    hop_length=10,
-    n_mels=80,
-    freq_mask_param=100,
-    freq_mask_num=1,
-    time_mask_param=80,
-    time_mask_num=1,
-    probability=1.0,
-):
-    """
-    Return the list of transformations described in TitaNet paper
-    """
-    return [
-        transforms.RandomChunk(max_length, chunk_lengths),
-        transforms.Resample(sample_rate),
-        transforms.SpeedPerturbation(min_speed, max_speed, probability=probability),
-        transforms.Reverb(rir_corpora_path, probability=probability),
-        transforms.NormalizedMelSpectrogram(
-            sample_rate,
-            n_fft=n_fft,
-            win_length=int(win_length / 1000 * sample_rate),
-            hop_length=int(hop_length / 1000 * sample_rate),
-            n_mels=n_mels,
-        ),
-        transforms.SpecAugment(
-            freq_mask_param=freq_mask_param,
-            freq_mask_num=freq_mask_num,
-            time_mask_param=time_mask_param,
-            time_mask_num=time_mask_num,
-            probability=probability,
-        ),
-    ]
-
-
 def get_datasets(
     dataset_root,
-    transforms,
+    transformations=None,
     train_fraction=0.8,
     test_speakers=10,
     test_utterances_per_speaker=10,
@@ -82,7 +22,7 @@ def get_datasets(
     parameters, splitted into training, validation and test sets
     """
     # Get the dataset
-    dataset = datasets.LibriSpeechDataset(dataset_root, transforms=transforms)
+    dataset = datasets.LibriSpeechDataset(dataset_root, transforms=transformations)
 
     # Get speakers
     utterances = dataset.speakers_utterances
@@ -124,59 +64,58 @@ def get_datasets(
     )
 
 
-def get_random_dataloader(dataset, batch_size, num_workers=0, n_mels=80, device="cpu"):
+def get_random_dataloader(dataset, batch_size, num_workers=4, n_mels=80, seed=42):
     """
     Return a dataloader that randomly samples a batch of data
     from the given dataset, to use in the training procedure
     """
-    random_sampler = torch.utils.data.RandomSampler(dataset)
-    random_batch_sampler = torch.utils.data.BatchSampler(
-        random_sampler, batch_size, drop_last=False
-    )
+    generator = torch.Generator()
+    generator.manual_seed(seed)
     return torch.utils.data.DataLoader(
         dataset,
-        batch_sampler=random_batch_sampler,
+        batch_size=batch_size,
+        shuffle=True,
         num_workers=num_workers,
-        collate_fn=partial(datasets.collate_fn, n_mels=n_mels, device=device),
+        collate_fn=partial(datasets.collate_fn, n_mels=n_mels),
+        pin_memory=True,
+        drop_last=False,
+        generator=generator,
+        persistent_workers=True,
     )
 
 
-def get_sequential_dataloader(dataset, num_workers=0, n_mels=80, device="cpu"):
+def get_sequential_dataloader(dataset, num_workers=4, n_mels=80, seed=42):
     """
     Return a dataloader that sequentially samples one observation
     at a time from the given dataset, to use in the validation phase
     """
-    sequential_sampler = torch.utils.data.SequentialSampler(dataset)
+    generator = torch.Generator()
+    generator.manual_seed(seed)
     return torch.utils.data.DataLoader(
         dataset,
         batch_size=1,
-        sampler=sequential_sampler,
+        shuffle=False,
         num_workers=num_workers,
-        collate_fn=partial(datasets.collate_fn, n_mels=n_mels, device=device),
+        collate_fn=partial(datasets.collate_fn, n_mels=n_mels),
+        pin_memory=True,
+        drop_last=False,
+        generator=generator,
+        persistent_workers=True,
     )
 
 
 def get_dataloaders(
-    train_dataset,
-    val_dataset,
-    batch_size,
-    num_workers=0,
-    n_mels=80,
-    device="cpu",
+    train_dataset, val_dataset, batch_size, num_workers=4, n_mels=80, seed=42
 ):
     """
     Return the appropriate dataloader for each dataset split
     """
     return (
         get_random_dataloader(
-            train_dataset,
-            batch_size,
-            num_workers=num_workers,
-            n_mels=n_mels,
-            device=device,
+            train_dataset, batch_size, num_workers=num_workers, n_mels=n_mels, seed=seed
         ),
         get_sequential_dataloader(
-            val_dataset, num_workers=num_workers, n_mels=n_mels, device=device
+            val_dataset, num_workers=num_workers, n_mels=n_mels, seed=seed
         ),
     )
 
@@ -191,37 +130,28 @@ def train(params):
     device = utils.get_device()
 
     # Get data transformations
-    if params.audio.augmentation.enabled:
-        transforms = get_transforms(
-            params.audio.augmentation.rir_corpora_path,
-            max_length=params.audio.augmentation.max_length,
-            chunk_lengths=params.audio.augmentation.chunk_lengths,
-            min_speed=params.audio.augmentation.min_speed,
-            max_speed=params.audio.augmentation.max_speed,
-            sample_rate=params.audio.sample_rate,
-            n_fft=params.audio.spectrogram.n_fft,
-            win_length=params.audio.spectrogram.win_length,
-            hop_length=params.audio.spectrogram.hop_length,
-            n_mels=params.audio.spectrogram.n_mels,
-        )
-    else:
-        transforms = get_simple_transforms(
-            sample_rate=params.audio.sample_rate,
-            n_fft=params.audio.spectrogram.n_fft,
-            win_length=params.audio.spectrogram.win_length,
-            hop_length=params.audio.spectrogram.hop_length,
-            n_mels=params.audio.spectrogram.n_mels,
-        )
+    transformations = transforms.get_transforms(
+        params.augmentation.enable,
+        params.augmentation.rir_corpora_path,
+        max_length=params.augmentation.max_length,
+        chunk_lengths=params.augmentation.chunk_lengths,
+        min_speed=params.augmentation.min_speed,
+        max_speed=params.augmentation.max_speed,
+        sample_rate=params.audio.sample_rate,
+        n_fft=params.audio.spectrogram.n_fft,
+        win_length=params.audio.spectrogram.win_length,
+        hop_length=params.audio.spectrogram.hop_length,
+        n_mels=params.audio.spectrogram.n_mels,
+    )
 
     # Get datasets and dataloaders
     train_dataset, val_dataset, test_dataset, n_speakers = get_datasets(
         params.dataset.root,
-        transforms,
-        params.training.train_fraction,
-        params.test.num_speakers,
-        params.test.num_utterances_per_speaker,
+        transformations=transformations,
+        train_fraction=params.training.train_fraction,
+        test_speakers=params.test.num_speakers,
+        test_utterances_per_speaker=params.test.num_utterances_per_speaker,
     )
-
     if params.training.dumb.enabled:
         train_dataset = test_dataset
     train_dataloader, val_dataloader = get_dataloaders(
@@ -230,7 +160,7 @@ def train(params):
         params.training.batch_size,
         num_workers=params.generic.workers,
         n_mels=params.audio.spectrogram.n_mels,
-        device=device,
+        seed=params.generic.seed,
     )
 
     # Get loss function
