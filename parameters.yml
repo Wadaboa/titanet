@@ -2,9 +2,6 @@ dataset:
   root: "./data"
 
 training:
-  dumb:
-    enabled: false
-    n_layers: 10
   optimizer:
     type: "sgd"
     start_lr: 0.08
@@ -17,8 +14,8 @@ training:
   train_fraction: 0.8
   batch_size: 8
   epochs: 100
-  loss: "arc"
-  val_every: 2 # epochs
+  loss: "ge2e"
+  val_every: false # epochs
   reduction_method: "svd"
 
 test:
@@ -39,7 +36,12 @@ loss:
     margin: 0.2
     scale: 30
 
+dumb:
+  enabled: false
+  n_layers: 10
+
 titanet:
+  enabled: false
   embedding_size: 192
   model_size: "s"
   n_mega_blocks: false
@@ -47,8 +49,15 @@ titanet:
   simple_pool: false
   dropout: 0.05
 
-wandb:
+baseline:
   enabled: true
+  embedding_size: 256
+  n_layers: 3
+  hidden_size: 768
+  segment_length: 160
+
+wandb:
+  enabled: false
   entity: "wadaboa"
   project: "titanet"
   api_key_file: "./init/wandb_api_key_file"
@@ -56,7 +65,7 @@ wandb:
 generic:
   seed: 42
   workers: 4
-  log_console: false
+  log_console: true
   chart_dependencies: false
 
 audio:
@@ -70,8 +79,8 @@ audio:
 augmentation:
   probability: 0.5
   enable:
-    - "chunk"
-    - "specaugment"
+    #- "chunk"
+    #- "specaugment"
   rir:
     corpora_path: "./data/rirs"
   chunk:

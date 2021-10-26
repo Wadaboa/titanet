@@ -104,9 +104,10 @@ def train_one_epoch(
         # Store epoch info
         epoch_loss += loss
         epoch_time += model_time
-        epoch_preds += preds.detach().cpu().tolist()
-        epoch_targets += speakers.detach().cpu().tolist()
         epoch_embeddings += embeddings
+        epoch_targets += speakers.detach().cpu().tolist()
+        if preds is not None:
+            epoch_preds += preds.detach().cpu().tolist()
 
         # Stop if loss is not finite
         if not math.isfinite(loss):
@@ -126,7 +127,11 @@ def train_one_epoch(
         step += 1
 
     # Get metrics
-    metrics = utils.get_train_val_metrics(epoch_targets, epoch_preds, prefix="train")
+    metrics = dict()
+    if len(epoch_preds) > 0:
+        metrics = utils.get_train_val_metrics(
+            epoch_targets, epoch_preds, prefix="train"
+        )
     metrics["train/loss"] = epoch_loss / len(dataloader)
     metrics["train/time"] = epoch_time
     metrics["train/lr"] = (
@@ -337,9 +342,10 @@ def evaluate(
         # Store epoch info
         epoch_loss += loss
         epoch_time += model_time
-        epoch_preds += preds.detach().cpu().tolist()
-        epoch_targets += speakers.detach().cpu().tolist()
         epoch_embeddings += embeddings
+        epoch_targets += speakers.detach().cpu().tolist()
+        if preds is not None:
+            epoch_preds += preds.detach().cpu().tolist()
 
         # Empty CUDA cache
         if torch.cuda.is_available():
@@ -349,7 +355,9 @@ def evaluate(
         step += 1
 
     # Get metrics and return them
-    metrics = utils.get_train_val_metrics(epoch_targets, epoch_preds, prefix="val")
+    metrics = dict()
+    if len(epoch_preds) > 0:
+        metrics = utils.get_train_val_metrics(epoch_targets, epoch_preds, prefix="val")
     metrics[f"val/loss"] = epoch_loss / len(dataloader)
     metrics[f"val/time"] = epoch_time
 

@@ -53,6 +53,58 @@ class DumbConvNet(nn.Module):
         return self.loss_function(embeddings, speakers)
 
 
+class DVectorBaseline(nn.Module):
+    """
+    Simple recurrent module that splits spectrograms in segments
+    and computes embeddings as the average embedding of consecutive
+    segments
+
+    "Generalized End-to-End Loss for Speaker Verification",
+    Wan et al., https://arxiv.org/abs/1710.10467
+    """
+
+    def __init__(
+        self,
+        n_mels,
+        loss_function,
+        n_lstm_layers=3,
+        hidden_size=768,
+        embedding_size=256,
+        segment_length=160,
+    ):
+        super().__init__()
+        self.recurrent = nn.LSTM(n_mels, hidden_size, n_lstm_layers, batch_first=True)
+        self.projection = nn.Linear(hidden_size, embedding_size)
+        self.segment_length = segment_length
+        self.loss_function = loss_function
+
+    def forward(self, spectrograms, speakers=None):
+        """
+        Given input spectrograms of shape [B, M, T], it returns
+        utterance-level embeddings of shape [B, E]
+
+        B: batch size
+        M: number of mel frequency bands
+        T: maximum number of time steps (frames)
+        E: embedding size
+        """
+        embeddings = []
+        for spectrogram in spectrograms:
+            segments = (
+                spectrogram.transpose(0, 1)
+                .unfold(0, self.segment_length, self.segment_length // 2)
+                .transpose(1, 2)
+            )
+            outputs, _ = self.recurrent(segments)
+            segments_embedding = self.projection(outputs[:, -1, :])
+            spectrogram_embedding = segments_embedding.mean(dim=0)
+            embeddings += [spectrogram_embedding]
+        embeddings = torch.stack(embeddings)
+        if speakers is None:
+            return F.normalize(embeddings, p=2, dim=1)
+        return self.loss_function(embeddings, speakers)
+
+
 class TitaNet(nn.Module):
     """
     TitaNet is a neural network for extracting speaker representations,

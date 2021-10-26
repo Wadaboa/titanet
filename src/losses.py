@@ -9,10 +9,11 @@ class MetricLearningLoss(nn.Module):
     Generic loss function to be used in a metric learning setting
     """
 
-    def __init__(self, embedding_size, n_classes, *args, **kwargs):
+    def __init__(self, embedding_size, n_classes, device="cpu", *args, **kwargs):
         super(MetricLearningLoss, self).__init__()
         self.embedding_size = embedding_size
         self.n_classes = n_classes
+        self.device = device
 
     def forward(self, inputs, targets):
         raise NotImplementedError()
@@ -24,8 +25,8 @@ class CELoss(MetricLearningLoss):
     to map inputs to the target number of classes
     """
 
-    def __init__(self, embedding_size, n_classes):
-        super(CELoss, self).__init__(embedding_size, n_classes)
+    def __init__(self, embedding_size, n_classes, device="cpu"):
+        super(CELoss, self).__init__(embedding_size, n_classes, device=device)
         self.fc = nn.Linear(embedding_size, n_classes)
 
     def forward(self, inputs, targets):
@@ -53,9 +54,19 @@ class AngularMarginLoss(MetricLearningLoss):
     """
 
     def __init__(
-        self, embedding_size, n_classes, scale=None, m1=1, m2=0, m3=0, eps=1e-6
+        self,
+        embedding_size,
+        n_classes,
+        device="cpu",
+        scale=None,
+        m1=1,
+        m2=0,
+        m3=0,
+        eps=1e-6,
     ):
-        super(AngularMarginLoss, self).__init__(embedding_size, n_classes)
+        super(AngularMarginLoss, self).__init__(
+            embedding_size, n_classes, device=device
+        )
         self.fc = nn.Linear(embedding_size, n_classes, bias=False)
         self.scale = scale
         self.m1 = m1
@@ -129,10 +140,12 @@ class SphereFaceLoss(AngularMarginLoss):
     Liu et al., https://arxiv.org/abs/1704.08063
     """
 
-    def __init__(self, embedding_size, n_classes, scale=None, margin=3, eps=1e-6):
+    def __init__(
+        self, embedding_size, n_classes, device="cpu", scale=None, margin=3, eps=1e-6
+    ):
         assert margin > 1, "Margin out of bounds"
         super(SphereFaceLoss, self).__init__(
-            embedding_size, n_classes, scale=scale, m1=margin, eps=eps
+            embedding_size, n_classes, device=device, scale=scale, m1=margin, eps=eps
         )
 
 
@@ -144,10 +157,12 @@ class CosFaceLoss(AngularMarginLoss):
     Wang et al., https://arxiv.org/abs/1801.09414
     """
 
-    def __init__(self, embedding_size, n_classes, scale=64, margin=0.2, eps=1e-6):
+    def __init__(
+        self, embedding_size, n_classes, device="cpu", scale=64, margin=0.2, eps=1e-6
+    ):
         assert margin > 0 and margin < 1 - np.cos(np.pi / 4), "Margin out of bounds"
         super(CosFaceLoss, self).__init__(
-            embedding_size, n_classes, scale=scale, m3=margin, eps=eps
+            embedding_size, n_classes, device=device, scale=scale, m3=margin, eps=eps
         )
 
 
@@ -159,11 +174,91 @@ class ArcFaceLoss(AngularMarginLoss):
     Deng et al., https://arxiv.org/abs/1801.07698
     """
 
-    def __init__(self, embedding_size, n_classes, scale=64, margin=0.5, eps=1e-6):
+    def __init__(
+        self, embedding_size, n_classes, device="cpu", scale=64, margin=0.5, eps=1e-6
+    ):
         assert margin > 0 and margin < 1, "Margin out of bounds"
         super(ArcFaceLoss, self).__init__(
-            embedding_size, n_classes, scale=scale, m2=margin, eps=eps
+            embedding_size, n_classes, device=device, scale=scale, m2=margin, eps=eps
         )
+
+
+class GE2ELoss(MetricLearningLoss):
+    """
+    Compute the sotfmax version of the GE2E (Generalized End To End) loss
+
+    "Generalized End-to-End Loss for Speaker Verification",
+    Wan et al., https://arxiv.org/abs/1710.10467
+    """
+
+    def __init__(self, embedding_size, n_classes, device="cpu"):
+        super(GE2ELoss, self).__init__(embedding_size, n_classes, device=device)
+        self.w = nn.Parameter(torch.tensor(1.0))
+        self.b = nn.Parameter(torch.tensor(0.0))
+
+    def compute_similarity(self, embedding, centroid):
+        """
+        Compute the cosine similarity between embedding of speaker j,
+        utterance i and the mean embedding (centroid) of speaker k
+        """
+        return F.relu(self.w) * F.cosine_similarity(embedding, centroid, dim=0) + self.b
+
+    def compute_loss(self, speaker_embedding, speaker, embeddings_per_speaker):
+        """
+        Compute the softmax variant of GE2E loss for the given embedding
+        e_ji, where j identifies the speaker and i the utterance
+        """
+        # Compute the first term of the summation, i.e. -s_ji,j
+        centroid_minus_self = (
+            embeddings_per_speaker[speaker].sum() - speaker_embedding
+        ) / embeddings_per_speaker[speaker].shape[0]
+        self_similarity = self.compute_similarity(
+            speaker_embedding, centroid_minus_self
+        )
+
+        # Compute the second term of the summation, i.e. log(sum(exp(s_ji,k)))
+        summation = torch.tensor(0.0, device=self.device, requires_grad=True)
+        for other_speaker in embeddings_per_speaker:
+            similarity = torch.clone(self_similarity)
+            if other_speaker != speaker:
+                centroid = (
+                    embeddings_per_speaker[other_speaker].sum()
+                    / embeddings_per_speaker[other_speaker].shape[0]
+                )
+                similarity = self.compute_similarity(speaker_embedding, centroid)
+            summation = summation + torch.exp(similarity)
+
+        # Sum first and second term
+        return -self_similarity + torch.log(summation)
+
+    def forward(self, inputs, targets):
+        """
+        Compute the softmax variant of GE2E loss for inputs x
+        of size [N, D] and outputs y of size [N], where N is
+        the batch size and D is the embedding dimension
+
+        It differs from the original implementation as it does not
+        expect an input of size [N, M, D], where M is a fixed number
+        of utterances from each speaker
+        """
+        # Create dictionary of tensors u, s.t. u[k] is a matrix
+        # containing all utterances of speaker k
+        embeddings_per_speaker = dict()
+        for speaker in torch.unique(targets):
+            embeddings_per_speaker[speaker.item()] = torch.index_select(
+                inputs, dim=0, index=(targets == speaker).nonzero(as_tuple=True)[0]
+            )
+
+        # Compute loss for each embedding e_ji
+        loss = torch.tensor(0.0, device=self.device, requires_grad=True)
+        for speaker in embeddings_per_speaker:
+            for speaker_embedding in embeddings_per_speaker[speaker]:
+                loss = loss + self.compute_loss(
+                    speaker_embedding, speaker, embeddings_per_speaker
+                )
+
+        # Return total sum of losses
+        return F.normalize(inputs, p=2, dim=1), None, loss
 
 
 LOSSES = {
@@ -171,4 +266,5 @@ LOSSES = {
     "sphere": SphereFaceLoss,
     "cos": CosFaceLoss,
     "arc": ArcFaceLoss,
+    "ge2e": GE2ELoss,
 }

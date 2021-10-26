@@ -162,7 +162,7 @@ def train(params):
         test_speakers=params.test.num_speakers,
         test_utterances_per_speaker=params.test.num_utterances_per_speaker,
     )
-    if params.training.dumb.enabled:
+    if params.dumb.enabled:
         train_dataset = test_dataset
     train_dataloader, val_dataloader = get_dataloaders(
         train_dataset,
@@ -181,12 +181,21 @@ def train(params):
         params.titanet.embedding_size, n_speakers, **loss_params
     )
 
-    # Get TitaNet model
-    if params.training.dumb.enabled:
+    # Get model
+    if params.dumb.enabled:
         model = models.DumbConvNet(
             params.audio.spectrogram.n_mels,
             loss_function,
             n_layers=params.training.dumb.n_layers,
+        )
+    elif params.baseline.enabled:
+        model = models.DVectorBaseline(
+            params.audio.spectrogram.n_mels,
+            loss_function,
+            n_lstm_layers=params.baseline.n_layers,
+            hidden_size=params.baseline.hidden_size,
+            embedding_size=params.baseline.embedding_size,
+            segment_length=params.baseline.segment_length,
         )
     else:
         n_mega_blocks = None
