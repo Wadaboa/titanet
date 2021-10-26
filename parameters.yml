@@ -5,8 +5,12 @@ training:
   dumb:
     enabled: false
     n_layers: 10
-  learning_rate: 0.08
-  lr_scheduler: true
+  optimizer:
+    type: "sgd"
+    start_lr: 0.08
+    scheduler: false
+    end_lr: 0.00001
+    weight_decay: 0.0
   checkpoints_path: "./checkpoints"
   figures_path: "./figures"
   checkpoints_frequency: 25 # epochs
@@ -41,10 +45,10 @@ titanet:
   n_mega_blocks: false
   attention_hidden_size: 128
   simple_pool: false
-  dropout: 0.5
+  dropout: 0.05
 
 wandb:
-  enabled: false
+  enabled: true
   entity: "wadaboa"
   project: "titanet"
   api_key_file: "./init/wandb_api_key_file"
@@ -64,19 +68,23 @@ audio:
     n_mels: 80
 
 augmentation:
-  rir_corpora_path: "./data/rirs"
+  probability: 0.5
   enable:
     - "chunk"
     - "specaugment"
-  max_length: 3 # s
-  chunk_lengths:
-    - 1.5
-    - 2
-    - 3
-  min_speed: 0.95
-  max_speed: 1.05
-  freq_mask_param: 100
-  freq_mask_num: 1
-  time_mask_param: 80
-  time_mask_num: 1
-  probability: 0.5
+  rir:
+    corpora_path: "./data/rirs"
+  chunk:
+    max_length: 3 # s
+    lengths:
+      - 1.5
+      - 2
+      - 3
+  speed:
+    min: 0.95
+    max: 1.05
+  specaugment:
+    freq_mask_ratio: 0.35
+    freq_mask_num: 1
+    time_mask_ratio: 0.15
+    time_mask_num: 1

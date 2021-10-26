@@ -130,21 +130,28 @@ def train(params):
     device = utils.get_device()
 
     # Set number of threads
-    torch.set_num_threads(params.generic.workers)
+    if params.generic.workers > 0:
+        torch.set_num_threads(params.generic.workers)
 
     # Get data transformations
     transformations = transforms.get_transforms(
         params.augmentation.enable,
-        params.augmentation.rir_corpora_path,
-        max_length=params.augmentation.max_length,
-        chunk_lengths=params.augmentation.chunk_lengths,
-        min_speed=params.augmentation.min_speed,
-        max_speed=params.augmentation.max_speed,
+        params.augmentation.rir.corpora_path,
+        max_length=params.augmentation.chunk.max_length,
+        chunk_lengths=params.augmentation.chunk.lengths,
+        min_speed=params.augmentation.speed.min,
+        max_speed=params.augmentation.speed.max,
         sample_rate=params.audio.sample_rate,
         n_fft=params.audio.spectrogram.n_fft,
         win_length=params.audio.spectrogram.win_length,
         hop_length=params.audio.spectrogram.hop_length,
         n_mels=params.audio.spectrogram.n_mels,
+        freq_mask_ratio=params.augmentation.specaugment.freq_mask_ratio,
+        freq_mask_num=params.augmentation.specaugment.freq_mask_num,
+        time_mask_ratio=params.augmentation.specaugment.time_mask_ratio,
+        time_mask_num=params.augmentation.specaugment.time_mask_num,
+        probability=params.augmentation.probability,
+        device=device,
     )
 
     # Get datasets and dataloaders
@@ -204,12 +211,19 @@ def train(params):
         )
 
     # Get optimizer and scheduler
-    optimizer = optim.SGD(model.parameters(), lr=params.training.learning_rate)
+    optimizer_type = optim.SGD if params.training.optimizer == "sgd" else optim.Adam
+    optimizer = optimizer_type(
+        model.parameters(),
+        lr=params.training.optimizer.start_lr,
+        weight_decay=params.training.optimizer.weight_decay,
+    )
     optimizer = utils.optimizer_to(optimizer, device=device)
     lr_scheduler = None
-    if params.training.lr_scheduler:
+    if params.training.optimizer.scheduler:
         lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=len(train_dataloader) * params.training.epochs
+            optimizer,
+            T_max=params.training.epochs,
+            eta_min=params.training.optimizer.end_lr,
         )
         lr_scheduler = utils.scheduler_to(lr_scheduler, device=device)
 

@@ -64,6 +64,7 @@ def train_one_epoch(
     model,
     optimizer,
     dataloader,
+    lr_scheduler=None,
     figures_path=None,
     reduction_method="svd",
     wandb_run=None,
@@ -128,6 +129,11 @@ def train_one_epoch(
     metrics = utils.get_train_val_metrics(epoch_targets, epoch_preds, prefix="train")
     metrics["train/loss"] = epoch_loss / len(dataloader)
     metrics["train/time"] = epoch_time
+    metrics["train/lr"] = (
+        lr_scheduler.get_last_lr()
+        if lr_scheduler is not None
+        else optimizer.param_groups[0]["lr"]
+    )
 
     # Log to console
     if log_console:
@@ -221,6 +227,7 @@ def training_loop(
             model,
             optimizer,
             train_dataloader,
+            lr_scheduler=lr_scheduler,
             figures_path=figures_path,
             reduction_method=reduction_method,
             wandb_run=wandb_run,
