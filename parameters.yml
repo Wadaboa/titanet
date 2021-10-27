@@ -9,14 +9,16 @@ training:
     end_lr: 0.00001
     weight_decay: 0.0
   checkpoints_path: "./checkpoints"
-  figures_path: "./figures"
   checkpoints_frequency: 25 # epochs
   train_fraction: 0.8
   batch_size: 8
   epochs: 100
-  loss: "ge2e"
+  loss: "ce"
   val_every: false # epochs
-  reduction_method: "svd"
+  figures:
+    enabled: true
+    path: "./figures"
+    reduction_method: "svd"
 
 test:
   enabled: true
@@ -39,10 +41,10 @@ loss:
 dumb:
   enabled: false
   n_layers: 10
+  hidden_size: 256
 
 titanet:
   enabled: false
-  embedding_size: 192
   model_size: "s"
   n_mega_blocks: false
   attention_hidden_size: 128
@@ -51,7 +53,6 @@ titanet:
 
 baseline:
   enabled: true
-  embedding_size: 256
   n_layers: 3
   hidden_size: 768
   segment_length: 160
@@ -64,9 +65,10 @@ wandb:
 
 generic:
   seed: 42
-  workers: 4
+  workers: 2
   log_console: true
   chart_dependencies: false
+  embedding_size: 192
 
 audio:
   sample_rate: 16000
@@ -79,8 +81,8 @@ audio:
 augmentation:
   probability: 0.5
   enable:
-    #- "chunk"
-    #- "specaugment"
+    - "chunk"
+    - "specaugment"
   rir:
     corpora_path: "./data/rirs"
   chunk:

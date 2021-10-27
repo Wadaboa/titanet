@@ -178,7 +178,7 @@ def train(params):
     if params.training.loss in params.loss.__dict__:
         loss_params = params.loss.__dict__[params.training.loss].__dict__["entries"]
     loss_function = losses.LOSSES[params.training.loss](
-        params.titanet.embedding_size, n_speakers, **loss_params
+        params.generic.embedding_size, n_speakers, device=device, **loss_params
     )
 
     # Get model
@@ -186,7 +186,10 @@ def train(params):
         model = models.DumbConvNet(
             params.audio.spectrogram.n_mels,
             loss_function,
-            n_layers=params.training.dumb.n_layers,
+            hidden_size=params.dumb.hidden_size,
+            embedding_size=params.generic.embedding_size,
+            n_layers=params.dumb.n_layers,
+            device=device,
         )
     elif params.baseline.enabled:
         model = models.DVectorBaseline(
@@ -194,8 +197,9 @@ def train(params):
             loss_function,
             n_lstm_layers=params.baseline.n_layers,
             hidden_size=params.baseline.hidden_size,
-            embedding_size=params.baseline.embedding_size,
+            embedding_size=params.generic.embedding_size,
             segment_length=params.baseline.segment_length,
+            device=device,
         )
     else:
         n_mega_blocks = None
@@ -203,7 +207,7 @@ def train(params):
             n_mega_blocks = params.titanet.n_mega_blocks
         model = models.TitaNet.get_titanet(
             loss_function,
-            embedding_size=params.titanet.embedding_size,
+            embedding_size=params.generic.embedding_size,
             n_mels=params.audio.spectrogram.n_mels,
             n_mega_blocks=n_mega_blocks,
             model_size=params.titanet.model_size,
@@ -259,8 +263,10 @@ def train(params):
         test_dataset=test_dataset if params.test.enabled else None,
         val_dataloader=val_dataloader,
         val_every=params.training.val_every or None,
-        figures_path=params.training.figures_path,
-        reduction_method=params.training.reduction_method,
+        figures_path=(
+            params.training.figures.path if params.training.figures.enabled else None
+        ),
+        reduction_method=params.training.figures.reduction_method,
         lr_scheduler=lr_scheduler,
         checkpoints_frequency=params.training.checkpoints_frequency,
         wandb_run=wandb_run,

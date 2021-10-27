@@ -21,9 +21,11 @@ class DumbConvNet(nn.Module):
         embedding_size=192,
         kernel_size=3,
         n_layers=1,
+        device="cpu",
     ):
         super(DumbConvNet, self).__init__()
 
+        # Define architecture
         channels = [n_mels] + [hidden_size] * n_layers
         self.conv = nn.Sequential(
             *[
@@ -33,7 +35,12 @@ class DumbConvNet(nn.Module):
         )
         self.fc = nn.Linear(hidden_size, embedding_size)
         self.pool = nn.AdaptiveAvgPool1d(1)
+
+        # Store loss function
         self.loss_function = loss_function
+
+        # Transfer to device
+        self.to(device)
 
     def forward(self, spectrograms, speakers=None):
         """
@@ -71,12 +78,20 @@ class DVectorBaseline(nn.Module):
         hidden_size=768,
         embedding_size=256,
         segment_length=160,
+        device="cpu",
     ):
-        super().__init__()
+        super(DVectorBaseline, self).__init__()
+
+        # Define architecture
         self.recurrent = nn.LSTM(n_mels, hidden_size, n_lstm_layers, batch_first=True)
         self.projection = nn.Linear(hidden_size, embedding_size)
+
+        # Store attributes
         self.segment_length = segment_length
         self.loss_function = loss_function
+
+        # Transfer to device
+        self.to(device)
 
     def forward(self, spectrograms, speakers=None):
         """

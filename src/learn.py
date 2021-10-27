@@ -19,7 +19,7 @@ CONSOLE = Console()
 
 
 def log_step(
-    current_epoch, total_epochs, current_step, total_steps, loss, time, prefix
+    current_epoch, total_epochs, current_step, total_steps, loss, times, prefix
 ):
     """
     Log metrics to the console after a forward pass
@@ -29,13 +29,15 @@ def log_step(
     table.add_column("EPOCH")
     table.add_column("STEP")
     table.add_column("LOSS")
-    table.add_column("TIME")
+    for time in times:
+        table.add_column(f"{time.upper()} TIME")
+    time_values = [f"{t:.2f}" for t in times.values()]
     table.add_row(
         prefix.capitalize(),
         f"{current_epoch} / {total_epochs}",
         f"{current_step} / {total_steps}",
         f"{loss:.2f}",
-        f"{time:.2f} s",
+        *tuple(time_values),
     )
     CONSOLE.print(table)
 
@@ -78,9 +80,14 @@ def train_one_epoch(
     model.train()
 
     # For each batch
-    epoch_loss, epoch_time, step = 0, 0, 1
+    step = 1
+    epoch_loss, epoch_data_time, epoch_model_time, epoch_opt_time = 0, 0, 0, 0
     epoch_preds, epoch_targets, epoch_embeddings = [], [], []
+    data_time = time.time()
     for spectrograms, _, speakers in dataloader:
+
+        # Get data loading time
+        data_time = time.time() - data_time
 
         # Get model outputs
         model_time = time.time()
@@ -89,21 +96,10 @@ def train_one_epoch(
         )
         model_time = time.time() - model_time
 
-        # Log to console
-        if log_console:
-            log_step(
-                current_epoch,
-                total_epochs,
-                step,
-                len(dataloader),
-                loss,
-                model_time,
-                "train",
-            )
-
         # Store epoch info
         epoch_loss += loss
-        epoch_time += model_time
+        epoch_data_time += data_time
+        epoch_model_time += model_time
         epoch_embeddings += embeddings
         epoch_targets += speakers.detach().cpu().tolist()
         if preds is not None:
@@ -115,16 +111,27 @@ def train_one_epoch(
             sys.exit(1)
 
         # Perform backpropagation
+        opt_time = time.time()
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        opt_time = time.time() - opt_time
+        epoch_opt_time += opt_time
+
+        # Log to console
+        if log_console:
+            times = {"model": model_time, "data": data_time, "opt": opt_time}
+            log_step(
+                current_epoch, total_epochs, step, len(dataloader), loss, times, "train"
+            )
 
         # Empty CUDA cache
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        # Increment step
+        # Increment step and re-initialize time counter
         step += 1
+        data_time = time.time()
 
     # Get metrics
     metrics = dict()
@@ -132,10 +139,16 @@ def train_one_epoch(
         metrics = utils.get_train_val_metrics(
             epoch_targets, epoch_preds, prefix="train"
         )
-    metrics["train/loss"] = epoch_loss / len(dataloader)
-    metrics["train/time"] = epoch_time
+    metrics["train/total_loss"] = epoch_loss
+    metrics["train/avg_loss"] = epoch_loss / len(dataloader)
+    metrics["train/total_data_time"] = epoch_data_time
+    metrics["train/avg_data_time"] = epoch_data_time / len(dataloader)
+    metrics["train/total_model_time"] = epoch_model_time
+    metrics["train/avg_model_time"] = epoch_model_time / len(dataloader)
+    metrics["train/total_opt_time"] = epoch_opt_time
+    metrics["train/avg_opt_time"] = epoch_opt_time / len(dataloader)
     metrics["train/lr"] = (
-        lr_scheduler.get_last_lr()
+        lr_scheduler.get_last_lr()[0]
         if lr_scheduler is not None
         else optimizer.param_groups[0]["lr"]
     )
@@ -145,11 +158,10 @@ def train_one_epoch(
         log_epoch(current_epoch, total_epochs, metrics, "train")
 
     # Plot embeddings
-    epoch_embeddings = torch.stack(epoch_embeddings)
     if figures_path is not None:
         figure_path = os.path.join(figures_path, f"epoch_{current_epoch}_train.png")
         utils.visualize_embeddings(
-            epoch_embeddings,
+            torch.stack(epoch_embeddings),
             epoch_targets,
             reduction_method=reduction_method,
             show=False,
@@ -316,9 +328,14 @@ def evaluate(
     model.eval()
 
     # For each batch
-    epoch_loss, epoch_time, step = 0, 0, 1
+    step = 1
+    epoch_loss, epoch_data_time, epoch_model_time = 0, 0, 0
     epoch_preds, epoch_targets, epoch_embeddings = [], [], []
+    data_time = time.time()
     for spectrograms, _, speakers in dataloader:
+
+        # Get data loading time
+        data_time = time.time() - data_time
 
         # Get model outputs
         model_time = time.time()
@@ -327,21 +344,10 @@ def evaluate(
         )
         model_time = time.time() - model_time
 
-        # Log to console
-        if log_console:
-            log_step(
-                current_epoch,
-                total_epochs,
-                step,
-                len(dataloader),
-                loss,
-                model_time,
-                "val",
-            )
-
         # Store epoch info
         epoch_loss += loss
-        epoch_time += model_time
+        epoch_data_time += data_time
+        epoch_model_time += model_time
         epoch_embeddings += embeddings
         epoch_targets += speakers.detach().cpu().tolist()
         if preds is not None:
@@ -351,26 +357,37 @@ def evaluate(
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        # Increment step
+        # Log to console
+        if log_console:
+            times = {"model": model_time, "data": data_time}
+            log_step(
+                current_epoch, total_epochs, step, len(dataloader), loss, times, "val"
+            )
+
+        # Increment step and re-initialize time counter
         step += 1
+        data_time = time.time()
 
     # Get metrics and return them
     metrics = dict()
     if len(epoch_preds) > 0:
         metrics = utils.get_train_val_metrics(epoch_targets, epoch_preds, prefix="val")
-    metrics[f"val/loss"] = epoch_loss / len(dataloader)
-    metrics[f"val/time"] = epoch_time
+    metrics[f"val/total_loss"] = epoch_loss
+    metrics[f"val/avg_loss"] = epoch_loss / len(dataloader)
+    metrics[f"val/total_data_time"] = epoch_data_time
+    metrics[f"val/avg_data_time"] = epoch_data_time / len(dataloader)
+    metrics[f"val/total_model_time"] = epoch_model_time
+    metrics[f"val/avg_model_time"] = epoch_model_time / len(dataloader)
 
     # Log to console
     if log_console:
         log_epoch(current_epoch, total_epochs, metrics, "val")
 
     # Plot embeddings
-    epoch_embeddings = torch.stack(epoch_embeddings)
     if figures_path is not None:
         figure_path = os.path.join(figures_path, f"epoch_{current_epoch}_val.png")
         utils.visualize_embeddings(
-            epoch_embeddings,
+            torch.stack(epoch_embeddings),
             epoch_targets,
             reduction_method=reduction_method,
             show=False,
