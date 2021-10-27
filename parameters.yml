@@ -3,22 +3,26 @@ dataset:
 
 training:
   optimizer:
-    type: "sgd"
-    start_lr: 0.08
+    type: "adam"
+    start_lr: 0.001
     scheduler: false
     end_lr: 0.00001
     weight_decay: 0.0
   checkpoints_path: "./checkpoints"
   checkpoints_frequency: 25 # epochs
-  train_fraction: 0.8
   batch_size: 8
-  epochs: 100
+  epochs: 250
   loss: "ce"
-  val_every: false # epochs
-  figures:
-    enabled: true
-    path: "./figures"
-    reduction_method: "svd"
+
+figures:
+  enabled: false
+  path: "./figures"
+  reduction_method: "svd"
+
+validation:
+  enabled: true
+  every: 2 # epochs
+  num_utterances_per_speaker: 10
 
 test:
   enabled: true
@@ -44,7 +48,7 @@ dumb:
   hidden_size: 256
 
 titanet:
-  enabled: false
+  enabled: true
   model_size: "s"
   n_mega_blocks: false
   attention_hidden_size: 128
@@ -52,13 +56,13 @@ titanet:
   dropout: 0.05
 
 baseline:
-  enabled: true
+  enabled: false
   n_layers: 3
   hidden_size: 768
   segment_length: 160
 
 wandb:
-  enabled: false
+  enabled: true
   entity: "wadaboa"
   project: "titanet"
   api_key_file: "./init/wandb_api_key_file"
@@ -66,7 +70,7 @@ wandb:
 generic:
   seed: 42
   workers: 2
-  log_console: true
+  log_console: false
   chart_dependencies: false
   embedding_size: 192
 

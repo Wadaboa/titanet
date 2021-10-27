@@ -12,8 +12,11 @@ import datasets, transforms, models, learn, losses, utils
 
 def get_datasets(
     dataset_root,
-    transformations=None,
-    train_fraction=0.8,
+    train_transformations=None,
+    non_train_transformations=None,
+    val_enabled=True,
+    val_utterances_per_speaker=10,
+    test_enabled=True,
     test_speakers=10,
     test_utterances_per_speaker=10,
 ):
@@ -22,46 +25,38 @@ def get_datasets(
     parameters, splitted into training, validation and test sets
     """
     # Get the dataset
-    dataset = datasets.LibriSpeechDataset(dataset_root, transforms=transformations)
+    dataset = datasets.LibriSpeechDataset(
+        dataset_root,
+        train_transforms=train_transformations,
+        non_train_transforms=non_train_transformations,
+    )
 
     # Get speakers
     utterances = dataset.speakers_utterances
     speakers = dataset.speakers
 
-    # Get training utterances as the first percentage slice
-    random_speakers = np.random.permutation(speakers)
-    train_speakers = int(train_fraction * len(speakers))
-    train_utterances = utils.flatten(
-        [utterances[s] for s in random_speakers[:train_speakers]]
-    )
+    # Compute train, validation and test utterances
+    train_utterances, val_utterances, test_utterances = [], [], []
+    for i, s in enumerate(speakers):
+        train_start_utterance = 0
+        if val_enabled:
+            val_utterances += utterances[s][:val_utterances_per_speaker]
+            train_start_utterance = val_utterances_per_speaker
+        if test_enabled and i < test_speakers:
+            test_utterances += utterances[s][
+                val_utterances_per_speaker:test_utterances_per_speaker
+            ]
+            train_start_utterance = test_utterances_per_speaker
+        train_utterances += utterances[s][train_start_utterance:]
 
-    # Get test utterances by selecting the given number of
-    # utterances for each of the given number of speakers
-    remaining_speakers = random_speakers[train_speakers:]
-    assert (
-        len(remaining_speakers) > test_speakers
-    ), "Not enough speakers for test and validation"
-    test_utterances = utils.flatten(
-        [
-            utterances[s][:test_utterances_per_speaker]
-            for s in remaining_speakers[:test_speakers]
-        ]
-    )
+    # Split dataset
+    train_dataset = torch.utils.data.Subset(dataset, train_utterances)
+    val_dataset = torch.utils.data.Subset(dataset, val_utterances)
+    val_dataset.training = False
+    test_dataset = torch.utils.data.Subset(dataset, test_utterances)
+    test_dataset.training = False
 
-    # Get validation set utterances as the ones remaining after
-    # training and test set splits
-    val_utterances = []
-    for s in remaining_speakers:
-        min_utterance = test_utterances_per_speaker if s < test_speakers else 0
-        val_utterances += utterances[s][min_utterance:]
-
-    # Split dataset by speakers
-    return (
-        torch.utils.data.Subset(dataset, train_utterances),
-        torch.utils.data.Subset(dataset, val_utterances),
-        torch.utils.data.Subset(dataset, test_utterances),
-        len(speakers),
-    )
+    return train_dataset, val_dataset, test_dataset, len(speakers)
 
 
 def get_random_dataloader(dataset, batch_size, num_workers=4, n_mels=80, seed=42):
@@ -134,7 +129,8 @@ def train(params):
         torch.set_num_threads(params.generic.workers)
 
     # Get data transformations
-    transformations = transforms.get_transforms(
+    partial_get_transforms = partial(
+        transforms.get_transforms,
         params.augmentation.enable,
         params.augmentation.rir.corpora_path,
         max_length=params.augmentation.chunk.max_length,
@@ -153,12 +149,17 @@ def train(params):
         probability=params.augmentation.probability,
         device=device,
     )
+    train_transformations = partial_get_transforms(inference=False)
+    non_train_transformations = partial_get_transforms(inference=True)
 
     # Get datasets and dataloaders
     train_dataset, val_dataset, test_dataset, n_speakers = get_datasets(
         params.dataset.root,
-        transformations=transformations,
-        train_fraction=params.training.train_fraction,
+        train_transformations=train_transformations,
+        non_train_transformations=non_train_transformations,
+        val_enabled=params.validation.enabled,
+        val_utterances_per_speaker=params.validation.num_utterances_per_speaker,
+        test_enabled=params.test.enabled,
         test_speakers=params.test.num_speakers,
         test_utterances_per_speaker=params.test.num_utterances_per_speaker,
     )
@@ -262,11 +263,9 @@ def train(params):
         params.training.checkpoints_path,
         test_dataset=test_dataset if params.test.enabled else None,
         val_dataloader=val_dataloader,
-        val_every=params.training.val_every or None,
-        figures_path=(
-            params.training.figures.path if params.training.figures.enabled else None
-        ),
-        reduction_method=params.training.figures.reduction_method,
+        val_every=params.validation.every if params.validation.enabled else None,
+        figures_path=params.figures.path if params.figures.enabled else None,
+        reduction_method=params.figures.reduction_method,
         lr_scheduler=lr_scheduler,
         checkpoints_frequency=params.training.checkpoints_frequency,
         wandb_run=wandb_run,

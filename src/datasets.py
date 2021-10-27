@@ -43,8 +43,10 @@ class SpeakerDataset:
     when indexed
     """
 
-    def __init__(self, transforms=None):
-        self.transforms = transforms or []
+    def __init__(self, train_transforms=None, non_train_transforms=None, training=True):
+        self.train_transforms = train_transforms or []
+        self.non_train_transforms = non_train_transforms or []
+        self.training = training
         self.speakers_utterances = self.get_speakers_utterances()
         self.speakers = list(self.speakers_utterances.keys())
         self.speakers_to_id = dict(zip(self.speakers, range(len(self.speakers))))
@@ -106,7 +108,10 @@ class SpeakerDataset:
             "speaker": speaker,
             "speaker_id": self.speakers_to_id[speaker],
         }
-        for transform in self.transforms:
+        transforms = (
+            self.train_transforms if self.training else self.non_train_transforms
+        )
+        for transform in transforms:
             example = transform(example)
         return example
 
@@ -116,12 +121,25 @@ class LibriSpeechDataset(SpeakerDataset, torchaudio.datasets.LIBRISPEECH):
     Custom LibriSpeech dataset for speaker-related tasks
     """
 
-    def __init__(self, root, transforms=None, *args, **kwargs):
+    def __init__(
+        self,
+        root,
+        train_transforms=None,
+        non_train_transforms=None,
+        training=True,
+        *args,
+        **kwargs
+    ):
         if not os.path.exists(root):
             os.makedirs(root, exist_ok=True)
             kwargs["download"] = True
         torchaudio.datasets.LIBRISPEECH.__init__(self, root, *args, **kwargs)
-        SpeakerDataset.__init__(self, transforms=transforms)
+        SpeakerDataset.__init__(
+            self,
+            train_transforms=train_transforms,
+            non_train_transforms=non_train_transforms,
+            training=training,
+        )
 
     def get_speakers_utterances(self):
         speakers_utterances = defaultdict(list)
@@ -147,12 +165,25 @@ class VCTKDataset(SpeakerDataset, torchaudio.datasets.VCTK_092):
     Custom VCTK dataset for speaker-related tasks
     """
 
-    def __init__(self, root, transforms=None, *args, **kwargs):
+    def __init__(
+        self,
+        root,
+        train_transforms=None,
+        non_train_transforms=None,
+        training=True,
+        *args,
+        **kwargs
+    ):
         if not os.path.exists(root):
             os.makedirs(root, exist_ok=True)
             kwargs["download"] = True
         torchaudio.datasets.VCTK_092.__init__(self, root, *args, **kwargs)
-        SpeakerDataset.__init__(self, transforms=transforms)
+        SpeakerDataset.__init__(
+            self,
+            train_transforms=train_transforms,
+            non_train_transforms=non_train_transforms,
+            training=training,
+        )
 
     def get_speakers_utterances(self):
         speakers_utterances = defaultdict(list)
