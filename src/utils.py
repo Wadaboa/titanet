@@ -270,6 +270,13 @@ def flatten(arr):
     return [item for sublist in arr for item in sublist]
 
 
+def overlap(a1, a2):
+    """
+    Check if the given arrays have common elements
+    """
+    return len(set(a1).intersection(set(a2))) > 0
+
+
 def set_seed(seed):
     """
     Fix all possible sources of randomness

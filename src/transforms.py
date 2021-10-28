@@ -40,7 +40,7 @@ def get_transforms(
     time_mask_num=1,
     probability=1.0,
     device="cpu",
-    inference=False,
+    training=True,
 ):
     """
     Return the list of transformations described in TitaNet paper
@@ -50,7 +50,7 @@ def get_transforms(
     transformations = [Resample(sample_rate)]
     if "chunk" in enabled:
         transformations += [RandomChunk(max_length, chunk_lengths)]
-    if "reverb" in enabled and not inference:
+    if "reverb" in enabled and training:
         transformations += [
             Reverb(rir_corpora_path, probability=probability, device=device)
         ]
@@ -68,7 +68,7 @@ def get_transforms(
             specaugment_time_mask_ratio=time_mask_ratio,
             specaugment_time_mask_num=time_mask_num,
             specaugment_probability=(
-                probability if "specaugment" in enabled and not inference else 0.0
+                probability if "specaugment" in enabled and training else 0.0
             ),
         )
     ]

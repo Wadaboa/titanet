@@ -22,6 +22,7 @@ figures:
 validation:
   enabled: true
   every: 2 # epochs
+  batch_size: 8
   num_utterances_per_speaker: 10
 
 test:
@@ -53,7 +54,7 @@ titanet:
   n_mega_blocks: false
   attention_hidden_size: 128
   simple_pool: false
-  dropout: 0.05
+  dropout: 0.1
 
 baseline:
   enabled: false
@@ -87,7 +88,7 @@ augmentation:
   probability: 0.5
   enable:
     - "chunk"
-    - "specaugment"
+    #- "specaugment"
   rir:
     corpora_path: "./data/rirs"
   chunk:

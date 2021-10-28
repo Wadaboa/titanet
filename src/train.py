@@ -10,111 +10,6 @@ import yaml
 import datasets, transforms, models, learn, losses, utils
 
 
-def get_datasets(
-    dataset_root,
-    train_transformations=None,
-    non_train_transformations=None,
-    val_enabled=True,
-    val_utterances_per_speaker=10,
-    test_enabled=True,
-    test_speakers=10,
-    test_utterances_per_speaker=10,
-):
-    """
-    Return an instance of the dataset specified in the given
-    parameters, splitted into training, validation and test sets
-    """
-    # Get the dataset
-    dataset = datasets.LibriSpeechDataset(
-        dataset_root,
-        train_transforms=train_transformations,
-        non_train_transforms=non_train_transformations,
-    )
-
-    # Get speakers
-    utterances = dataset.speakers_utterances
-    speakers = dataset.speakers
-
-    # Compute train, validation and test utterances
-    train_utterances, val_utterances, test_utterances = [], [], []
-    for i, s in enumerate(speakers):
-        train_start_utterance = 0
-        if val_enabled:
-            val_utterances += utterances[s][:val_utterances_per_speaker]
-            train_start_utterance = val_utterances_per_speaker
-        if test_enabled and i < test_speakers:
-            test_utterances += utterances[s][
-                val_utterances_per_speaker:test_utterances_per_speaker
-            ]
-            train_start_utterance = test_utterances_per_speaker
-        train_utterances += utterances[s][train_start_utterance:]
-
-    # Split dataset
-    train_dataset = torch.utils.data.Subset(dataset, train_utterances)
-    val_dataset = torch.utils.data.Subset(dataset, val_utterances)
-    val_dataset.training = False
-    test_dataset = torch.utils.data.Subset(dataset, test_utterances)
-    test_dataset.training = False
-
-    return train_dataset, val_dataset, test_dataset, len(speakers)
-
-
-def get_random_dataloader(dataset, batch_size, num_workers=4, n_mels=80, seed=42):
-    """
-    Return a dataloader that randomly samples a batch of data
-    from the given dataset, to use in the training procedure
-    """
-    generator = torch.Generator()
-    generator.manual_seed(seed)
-    return torch.utils.data.DataLoader(
-        dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=num_workers,
-        collate_fn=partial(datasets.collate_fn, n_mels=n_mels),
-        pin_memory=True,
-        drop_last=False,
-        generator=generator,
-        persistent_workers=True,
-    )
-
-
-def get_sequential_dataloader(dataset, num_workers=4, n_mels=80, seed=42):
-    """
-    Return a dataloader that sequentially samples one observation
-    at a time from the given dataset, to use in the validation phase
-    """
-    generator = torch.Generator()
-    generator.manual_seed(seed)
-    return torch.utils.data.DataLoader(
-        dataset,
-        batch_size=1,
-        shuffle=False,
-        num_workers=num_workers,
-        collate_fn=partial(datasets.collate_fn, n_mels=n_mels),
-        pin_memory=True,
-        drop_last=False,
-        generator=generator,
-        persistent_workers=True,
-    )
-
-
-def get_dataloaders(
-    train_dataset, val_dataset, batch_size, num_workers=4, n_mels=80, seed=42
-):
-    """
-    Return the appropriate dataloader for each dataset split
-    """
-    return (
-        get_random_dataloader(
-            train_dataset, batch_size, num_workers=num_workers, n_mels=n_mels, seed=seed
-        ),
-        get_sequential_dataloader(
-            val_dataset, num_workers=num_workers, n_mels=n_mels, seed=seed
-        ),
-    )
-
-
 def train(params):
     """
     Training loop entry-point
@@ -149,26 +44,34 @@ def train(params):
         probability=params.augmentation.probability,
         device=device,
     )
-    train_transformations = partial_get_transforms(inference=False)
-    non_train_transformations = partial_get_transforms(inference=True)
+    train_transformations = partial_get_transforms(training=True)
+    non_train_transformations = partial_get_transforms(training=False)
 
     # Get datasets and dataloaders
-    train_dataset, val_dataset, test_dataset, n_speakers = get_datasets(
+    train_dataset, val_dataset, test_dataset, n_speakers = datasets.get_datasets(
         params.dataset.root,
         train_transformations=train_transformations,
         non_train_transformations=non_train_transformations,
-        val_enabled=params.validation.enabled,
+        val=params.validation.enabled,
         val_utterances_per_speaker=params.validation.num_utterances_per_speaker,
-        test_enabled=params.test.enabled,
+        test=params.test.enabled,
         test_speakers=params.test.num_speakers,
         test_utterances_per_speaker=params.test.num_utterances_per_speaker,
     )
     if params.dumb.enabled:
         train_dataset = test_dataset
-    train_dataloader, val_dataloader = get_dataloaders(
+    train_dataloader = datasets.get_dataloader(
         train_dataset,
+        batch_size=params.training.batch_size,
+        shuffle=True,
+        num_workers=params.generic.workers,
+        n_mels=params.audio.spectrogram.n_mels,
+        seed=params.generic.seed,
+    )
+    val_dataloader = datasets.get_dataloader(
         val_dataset,
-        params.training.batch_size,
+        batch_size=params.validation.batch_size,
+        shuffle=False,
         num_workers=params.generic.workers,
         n_mels=params.audio.spectrogram.n_mels,
         seed=params.generic.seed,

@@ -1,11 +1,36 @@
 import os
 import itertools
 from collections import defaultdict
+from functools import partial
 
 import torch
 import torchaudio
 import numpy as np
 from tqdm import tqdm
+
+import utils
+
+
+def get_dataloader(
+    dataset, batch_size=1, shuffle=True, num_workers=4, n_mels=80, seed=42
+):
+    """
+    Return a dataloader that randomly (or sequentially) samples a batch
+    of data from the given dataset
+    """
+    generator = torch.Generator()
+    generator.manual_seed(seed)
+    return torch.utils.data.DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers,
+        collate_fn=partial(collate_fn, n_mels=n_mels),
+        pin_memory=True,
+        drop_last=False,
+        generator=generator,
+        persistent_workers=True,
+    )
 
 
 def collate_fn(batch, n_mels=80):
@@ -36,6 +61,46 @@ def collate_fn(batch, n_mels=80):
     return spectrograms, spectrogram_lengths, speakers
 
 
+def get_datasets(
+    dataset_root,
+    train_transformations=None,
+    non_train_transformations=None,
+    val=True,
+    val_utterances_per_speaker=10,
+    test=True,
+    test_speakers=10,
+    test_utterances_per_speaker=10,
+):
+    """
+    Return an instance of the dataset specified in the given
+    parameters, splitted into training, validation and test sets
+    """
+    # Get the dataset
+    full_dataset = LibriSpeechDataset(dataset_root)
+
+    # Compute train, validation and test utterances
+    train_utterances, val_utterances, test_utterances = full_dataset.get_splits(
+        val=val,
+        val_utterances_per_speaker=val_utterances_per_speaker,
+        test=test,
+        test_speakers=test_speakers,
+        test_utterances_per_speaker=test_utterances_per_speaker,
+    )
+
+    # Split dataset
+    train_dataset = full_dataset.subset(
+        train_utterances, transforms=train_transformations
+    )
+    val_dataset = full_dataset.subset(
+        val_utterances, transforms=non_train_transformations
+    )
+    test_dataset = full_dataset.subset(
+        test_utterances, transforms=non_train_transformations
+    )
+
+    return train_dataset, val_dataset, test_dataset, full_dataset.get_num_speakers()
+
+
 class SpeakerDataset:
     """
     Generic dataset with the ability to apply transforms
@@ -43,10 +108,8 @@ class SpeakerDataset:
     when indexed
     """
 
-    def __init__(self, train_transforms=None, non_train_transforms=None, training=True):
-        self.train_transforms = train_transforms or []
-        self.non_train_transforms = non_train_transforms or []
-        self.training = training
+    def __init__(self, transforms=None):
+        self.transforms = transforms or []
         self.speakers_utterances = self.get_speakers_utterances()
         self.speakers = list(self.speakers_utterances.keys())
         self.speakers_to_id = dict(zip(self.speakers, range(len(self.speakers))))
@@ -87,6 +150,61 @@ class SpeakerDataset:
             ]
         return samples
 
+    def get_num_speakers(self):
+        """
+        Return the number of speakers in the dataset
+        """
+        return len(self.speakers)
+
+    def get_splits(
+        self,
+        val=True,
+        val_utterances_per_speaker=10,
+        test=True,
+        test_speakers=10,
+        test_utterances_per_speaker=10,
+    ):
+        """
+        Return train, validation and test indices
+        """
+        # Split dataset
+        train_utterances, val_utterances, test_utterances = [], [], []
+        for i, s in enumerate(self.speakers):
+            train_start_utterance = 0
+            if val:
+                val_utterances += self.speakers_utterances[s][
+                    :val_utterances_per_speaker
+                ]
+                train_start_utterance += val_utterances_per_speaker
+            if test and i < test_speakers:
+                test_utterances += self.speakers_utterances[s][
+                    val_utterances_per_speaker : val_utterances_per_speaker
+                    + test_utterances_per_speaker
+                ]
+                train_start_utterance += test_utterances_per_speaker
+            train_utterances += self.speakers_utterances[s][train_start_utterance:]
+
+        # Check split correctness
+        assert (not val or len(val_utterances) > 0) and (
+            not test or len(test_utterances) > 0
+        ), "No validation or test utterances"
+        assert not utils.overlap(
+            train_utterances, val_utterances
+        ) and not utils.overlap(
+            val_utterances, test_utterances
+        ), "Splits are not disjoint"
+
+        return train_utterances, val_utterances, test_utterances
+
+    def subset(self, indices, transforms=None):
+        """
+        Return a subset of the current dataset and possibly
+        overwrite transformations
+        """
+        dataset = torch.utils.data.Subset(self, indices)
+        dataset.dataset.transforms = transforms
+        return dataset
+
     def info(self):
         """
         Return a dictionary of generic info about the dataset
@@ -94,7 +212,7 @@ class SpeakerDataset:
         utterances_per_speaker = [len(u) for u in self.speakers_utterances.values()]
         return {
             "utterances": len(self),
-            "speakers": len(self.speakers),
+            "speakers": self.get_num_speakers(),
             "utterances_per_speaker_mean": round(np.mean(utterances_per_speaker), 2),
             "utterances_per_speaker_std": round(np.std(utterances_per_speaker), 2),
         }
@@ -108,10 +226,7 @@ class SpeakerDataset:
             "speaker": speaker,
             "speaker_id": self.speakers_to_id[speaker],
         }
-        transforms = (
-            self.train_transforms if self.training else self.non_train_transforms
-        )
-        for transform in transforms:
+        for transform in self.transforms:
             example = transform(example)
         return example
 
@@ -121,25 +236,12 @@ class LibriSpeechDataset(SpeakerDataset, torchaudio.datasets.LIBRISPEECH):
     Custom LibriSpeech dataset for speaker-related tasks
     """
 
-    def __init__(
-        self,
-        root,
-        train_transforms=None,
-        non_train_transforms=None,
-        training=True,
-        *args,
-        **kwargs
-    ):
+    def __init__(self, root, transforms=None, *args, **kwargs):
         if not os.path.exists(root):
             os.makedirs(root, exist_ok=True)
             kwargs["download"] = True
         torchaudio.datasets.LIBRISPEECH.__init__(self, root, *args, **kwargs)
-        SpeakerDataset.__init__(
-            self,
-            train_transforms=train_transforms,
-            non_train_transforms=non_train_transforms,
-            training=training,
-        )
+        SpeakerDataset.__init__(self, transforms=transforms)
 
     def get_speakers_utterances(self):
         speakers_utterances = defaultdict(list)
@@ -165,25 +267,12 @@ class VCTKDataset(SpeakerDataset, torchaudio.datasets.VCTK_092):
     Custom VCTK dataset for speaker-related tasks
     """
 
-    def __init__(
-        self,
-        root,
-        train_transforms=None,
-        non_train_transforms=None,
-        training=True,
-        *args,
-        **kwargs
-    ):
+    def __init__(self, root, transforms=None, *args, **kwargs):
         if not os.path.exists(root):
             os.makedirs(root, exist_ok=True)
             kwargs["download"] = True
         torchaudio.datasets.VCTK_092.__init__(self, root, *args, **kwargs)
-        SpeakerDataset.__init__(
-            self,
-            train_transforms=train_transforms,
-            non_train_transforms=non_train_transforms,
-            training=training,
-        )
+        SpeakerDataset.__init__(self, transforms=transforms)
 
     def get_speakers_utterances(self):
         speakers_utterances = defaultdict(list)

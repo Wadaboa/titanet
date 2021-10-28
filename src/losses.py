@@ -233,13 +233,13 @@ class GE2ELoss(MetricLearningLoss):
 
     def forward(self, inputs, targets):
         """
-        Compute the softmax variant of GE2E loss for inputs x
-        of size [N, D] and outputs y of size [N], where N is
-        the batch size and D is the embedding dimension
+        Compute the softmax variant of GE2E loss for inputs
+        of size [B, E] and targets of size [B] (it differs from
+        the original implementation as it does not expect a fixed
+        number of utterances per speaker as input)
 
-        It differs from the original implementation as it does not
-        expect an input of size [N, M, D], where M is a fixed number
-        of utterances from each speaker
+        B: batch size
+        E: embedding size
         """
         # Create dictionary of tensors u, s.t. u[k] is a matrix
         # containing all utterances of speaker k
