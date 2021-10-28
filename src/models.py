@@ -76,6 +76,7 @@ class DVectorBaseline(nn.Module):
         loss_function,
         n_lstm_layers=3,
         hidden_size=768,
+        lstm_average=True,
         embedding_size=256,
         segment_length=160,
         device="cpu",
@@ -87,6 +88,8 @@ class DVectorBaseline(nn.Module):
         self.projection = nn.Linear(hidden_size, embedding_size)
 
         # Store attributes
+        self.lstm_average = lstm_average
+        self.embedding_size = embedding_size
         self.segment_length = segment_length
         self.loss_function = loss_function
 
@@ -99,22 +102,45 @@ class DVectorBaseline(nn.Module):
         utterance-level embeddings of shape [B, E]
 
         B: batch size
+        N: number of segments for each spectrogram
         M: number of mel frequency bands
         T: maximum number of time steps (frames)
         E: embedding size
+        H: hidden size
+        S: segment length
         """
-        embeddings = []
-        for spectrogram in spectrograms:
-            segments = (
-                spectrogram.transpose(0, 1)
-                .unfold(0, self.segment_length, self.segment_length // 2)
-                .transpose(1, 2)
-            )
-            outputs, _ = self.recurrent(segments)
-            segments_embedding = self.projection(outputs[:, -1, :])
-            spectrogram_embedding = segments_embedding.mean(dim=0)
-            embeddings += [spectrogram_embedding]
-        embeddings = torch.stack(embeddings)
+        # Pad spectrograms to have at least a number of frames
+        # equal to the selected segment length
+        right_pad = np.clip(self.segment_length - spectrograms.size(-1), 0, None)
+        padded_spectrograms = F.pad(spectrograms, (0, right_pad), "constant", 0)
+
+        # Compute segments for each spectrogram and stack them on the batch dimension
+        # to obtain a tensor of size [B * N, M, S]
+        segments_list = [
+            s.unfold(-1, self.segment_length, self.segment_length // 2).transpose(0, 1)
+            for s in padded_spectrograms
+        ]
+        segments = torch.cat(segments_list)
+
+        # Forward LSTM pass
+        # [B * N, M, S] -> [B * N, S, H]
+        outputs, _ = self.recurrent(segments.transpose(1, 2))
+
+        # Collapse LSTM hidden states by either averaging or taking the last
+        # [B * N, S, H] -> [B * N, H]
+        outputs = outputs.mean(dim=1) if self.lstm_average else outputs[:, -1, :]
+
+        # Project hidden states to the embedding size
+        # [B * N, H] -> [B * N, E]
+        segments_embedding = self.projection(outputs)
+
+        # Compute the average embedding over all segments in each spectrogram
+        # [B * N, E] -> [B, E]
+        batch_size, num_segments = spectrograms.size(0), segments_list[0].size(0)
+        embeddings = segments_embedding.reshape(
+            batch_size, num_segments, self.embedding_size
+        ).mean(dim=1)
+
         if speakers is None:
             return F.normalize(embeddings, p=2, dim=1)
         return self.loss_function(embeddings, speakers)

@@ -198,6 +198,7 @@ def train(params):
             loss_function,
             n_lstm_layers=params.baseline.n_layers,
             hidden_size=params.baseline.hidden_size,
+            lstm_average=params.baseline.average,
             embedding_size=params.generic.embedding_size,
             segment_length=params.baseline.segment_length,
             device=device,

@@ -60,6 +60,7 @@ baseline:
   n_layers: 3
   hidden_size: 768
   segment_length: 160
+  average: True
 
 wandb:
   enabled: true
