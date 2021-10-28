@@ -5,6 +5,7 @@ from functools import partial
 
 import torch
 import torchaudio
+import librosa
 import numpy as np
 from tqdm import tqdm
 
@@ -130,6 +131,12 @@ class SpeakerDataset:
         """
         raise NotImplementedError()
 
+    def get_path(self, idx):
+        """
+        Return the system path identifying the utterance at the given index
+        """
+        raise NotImplementedError()
+
     def get_sample_pairs(self, indices=None, device="cpu"):
         """
         Return a list of tuples (s1, s2, l), where s1, s2
@@ -205,16 +212,47 @@ class SpeakerDataset:
         dataset.dataset.transforms = transforms
         return dataset
 
-    def info(self):
+    def get_durations(self):
+        """
+        Return the duration (in seconds) for each utterance
+        """
+        durations = dict()
+        for idx in tqdm(range(len(self)), desc="Computing durations"):
+            filename = self.get_path(idx)
+            durations[idx] = librosa.get_duration(filename=filename)
+        return durations
+
+    def get_durations_per_speaker(self, hours=True):
+        """
+        Return a dictionary having as key a speaker id
+        and as value the total number of seconds (or hours)
+        for that speaker
+        """
+        durations = self.get_durations()
+        durations_per_speaker = dict()
+        div = 1 if not hours else 3600
+        for speaker, utterances in self.speakers_utterances.items():
+            durations_per_speaker[speaker] = (
+                sum(durations[idx] for idx in utterances) / div
+            )
+        return durations_per_speaker
+
+    def info(self, hours=True):
         """
         Return a dictionary of generic info about the dataset
         """
         utterances_per_speaker = [len(u) for u in self.speakers_utterances.values()]
+        durations_per_speaker = list(
+            self.get_durations_per_speaker(hours=hours).values()
+        )
         return {
-            "utterances": len(self),
-            "speakers": self.get_num_speakers(),
+            "num_utterances": len(self),
+            "num_speakers": self.get_num_speakers(),
+            "total_duration": round(sum(durations_per_speaker), 2),
             "utterances_per_speaker_mean": round(np.mean(utterances_per_speaker), 2),
             "utterances_per_speaker_std": round(np.std(utterances_per_speaker), 2),
+            "durations_per_speaker_mean": round(np.mean(durations_per_speaker), 2),
+            "durations_per_speaker_std": round(np.std(durations_per_speaker), 2),
         }
 
     def __getitem__(self, idx):
@@ -261,6 +299,13 @@ class LibriSpeechDataset(SpeakerDataset, torchaudio.datasets.LIBRISPEECH):
         ) = torchaudio.datasets.LIBRISPEECH.__getitem__(self, idx)
         return waveform, sample_rate, speaker
 
+    def get_path(self, idx):
+        fileid = self._walker[idx]
+        speaker_id, chapter_id, utterance_id = fileid.split("-")
+        fileid_audio = speaker_id + "-" + chapter_id + "-" + utterance_id
+        file_audio = fileid_audio + self._ext_audio
+        return os.path.join(self._path, speaker_id, chapter_id, file_audio)
+
 
 class VCTKDataset(SpeakerDataset, torchaudio.datasets.VCTK_092):
     """
@@ -285,3 +330,11 @@ class VCTKDataset(SpeakerDataset, torchaudio.datasets.VCTK_092):
             self, idx
         )
         return waveform, sample_rate, speaker
+
+    def get_path(self, idx):
+        speaker_id, utterance_id = self._sample_ids[idx]
+        return os.path.join(
+            self._audio_dir,
+            speaker_id,
+            f"{speaker_id}_{utterance_id}_{self._mic_id}{self._audio_ext}",
+        )
