@@ -1,7 +1,7 @@
 # TitaNet
 
 <p align="center">
-	<img src="assets/architecture.png" alt="architecture" style="width: 450px;"/>
+	<img src="assets/titanet-architecture.png" alt="titanet-architecture" style="width: 450px;"/>
 </p>
 
 This repository contains a small scale implementation of the following paper:

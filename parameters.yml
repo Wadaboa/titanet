@@ -51,7 +51,7 @@ dumb:
 titanet:
   enabled: true
   model_size: "s"
-  n_mega_blocks: false
+  n_mega_blocks: 17
   attention_hidden_size: 128
   simple_pool: false
   dropout: 0.1

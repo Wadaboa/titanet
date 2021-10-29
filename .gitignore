@@ -141,3 +141,7 @@ figures/
 # Wandb
 init/wandb_api_key_file
 wandb/
+
+# Results
+pretrained/
+results/

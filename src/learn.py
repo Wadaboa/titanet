@@ -3,6 +3,7 @@ import time
 import math
 import sys
 import json
+from matplotlib.pyplot import figure
 
 import torch
 import torch.nn.functional as F
@@ -274,10 +275,10 @@ def training_loop(
             and (epoch % val_every == 0 or epoch == 1 or epoch == epochs)
         ):
             evaluate(
-                epoch,
-                epochs,
                 model,
                 val_dataloader,
+                current_epoch=epoch,
+                total_epochs=epochs,
                 figures_path=figures_path,
                 reduction_method=reduction_method,
                 wandb_run=wandb_run,
@@ -311,11 +312,12 @@ def training_loop(
 
 @torch.no_grad()
 def evaluate(
-    current_epoch,
-    total_epochs,
     model,
     dataloader,
+    current_epoch=None,
+    total_epochs=None,
     figures_path=None,
+    figure_name=None,
     reduction_method="svd",
     wandb_run=None,
     log_console=True,
@@ -385,7 +387,9 @@ def evaluate(
 
     # Plot embeddings
     if figures_path is not None:
-        figure_path = os.path.join(figures_path, f"epoch_{current_epoch}_val.png")
+        if figure_name is None:
+            figure_name = f"epoch_{current_epoch}_val.png"
+        figure_path = os.path.join(figures_path, figure_name)
         utils.visualize_embeddings(
             torch.stack(epoch_embeddings),
             epoch_targets,
@@ -450,3 +454,36 @@ def test(
     # Log to wandb
     if wandb_run is not None:
         wandb_run.notes = json.dumps(metrics, indent=2).encode("utf-8")
+
+
+def infer(
+    model,
+    utterances,
+    speakers,
+    dataset,
+    reduction_method="svd",
+    figure_path=None,
+    device="cpu",
+):
+    """
+    Compute embeddings for the given utterances and plot them
+    """
+    # Put the model in evaluation mode
+    model.eval()
+
+    # Compute embeddings
+    all_embeddings = []
+    for utterance in tqdm(utterances):
+        data = dataset[utterance]
+        embeddings = model(data["spectrogram"].to(device))
+        all_embeddings += embeddings
+
+    # Show embeddings
+    utils.visualize_embeddings(
+        torch.stack(all_embeddings),
+        speakers,
+        reduction_method=reduction_method,
+        show=True,
+        save=figure_path,
+        only_centroids=False,
+    )

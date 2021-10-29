@@ -101,7 +101,9 @@ def visualize_embeddings(
         np.concatenate([embeddings, np.expand_dims(labels, axis=-1)], axis=-1),
         columns=["x", "y", "l"],
     )
-    embeddings_df.l = embeddings_df.l.astype(int)
+    embeddings_df.x = embeddings_df.x.astype(float)
+    embeddings_df.y = embeddings_df.y.astype(float)
+    embeddings_df.l = embeddings_df.l.astype(str)
     cluster_colors = {l: np.random.random(3) for l in np.unique(labels)}
     embeddings_df["c"] = embeddings_df.l.map(
         {l: tuple(c) for l, c in cluster_colors.items()}

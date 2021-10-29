@@ -137,6 +137,20 @@ class SpeakerDataset:
         """
         raise NotImplementedError()
 
+    def get_random_utterances(self, n_speakers=5, n_utterances_per_speaker=20):
+        """
+        Return a list of random utterance ids for each random speaker
+        """
+        utterances, speakers = [], []
+        random_speakers = np.random.choice(self.speakers, size=n_speakers)
+        for speaker in random_speakers:
+            speaker_utterances = self.speakers_utterances[speaker]
+            utterances += list(
+                np.random.choice(speaker_utterances, size=n_utterances_per_speaker)
+            )
+            speakers += [speaker] * n_utterances_per_speaker
+        return utterances, speakers
+
     def get_sample_pairs(self, indices=None, device="cpu"):
         """
         Return a list of tuples (s1, s2, l), where s1, s2

@@ -16,7 +16,7 @@ class DumbConvNet(nn.Module):
     def __init__(
         self,
         n_mels,
-        loss_function,
+        loss_function=None,
         hidden_size=256,
         embedding_size=192,
         kernel_size=3,
@@ -55,8 +55,15 @@ class DumbConvNet(nn.Module):
         encodings = self.conv(spectrograms)
         embeddings = self.fc(encodings.transpose(1, 2))
         embeddings = self.pool(embeddings.transpose(1, 2)).squeeze(-1)
+
+        # Inference mode
         if speakers is None:
             return F.normalize(embeddings, p=2, dim=1)
+
+        # Training mode
+        assert (
+            self.loss_function is not None
+        ), "Loss function should not be None in training mode"
         return self.loss_function(embeddings, speakers)
 
 
@@ -73,7 +80,7 @@ class DVectorBaseline(nn.Module):
     def __init__(
         self,
         n_mels,
-        loss_function,
+        loss_function=None,
         n_lstm_layers=3,
         hidden_size=768,
         lstm_average=True,
@@ -141,8 +148,14 @@ class DVectorBaseline(nn.Module):
             batch_size, num_segments, self.embedding_size
         ).mean(dim=1)
 
+        # Inference mode
         if speakers is None:
             return F.normalize(embeddings, p=2, dim=1)
+
+        # Training mode
+        assert (
+            self.loss_function is not None
+        ), "Loss function should not be None in training mode"
         return self.loss_function(embeddings, speakers)
 
 
@@ -163,7 +176,6 @@ class TitaNet(nn.Module):
         self,
         n_mels,
         n_mega_blocks,
-        loss_function,
         n_sub_blocks,
         encoder_hidden_size,
         encoder_output_size,
@@ -174,6 +186,7 @@ class TitaNet(nn.Module):
         attention_hidden_size=128,
         se_reduction=16,
         simple_pool=False,
+        loss_function=None,
         dropout=0.5,
         device="cpu",
     ):
@@ -217,10 +230,10 @@ class TitaNet(nn.Module):
     @classmethod
     def find_n_mega_blocks(
         cls,
-        loss_function,
         embedding_size,
         n_mels,
         model_size,
+        loss_function=None,
         n_mega_blocks_trials=None,
     ):
         """
@@ -233,16 +246,14 @@ class TitaNet(nn.Module):
         best_value, min_distance = None, np.inf
         for n_mega_blocks in n_mega_blocks_trials:
             titanet = cls.get_titanet(
-                loss_function,
                 embedding_size=embedding_size,
                 n_mels=n_mels,
                 n_mega_blocks=n_mega_blocks,
                 model_size=model_size,
+                loss_function=loss_function,
             )
             params = titanet.get_n_params(div=1e6)
-            distance = target_params - params
-            if distance < 0:
-                break
+            distance = abs(target_params - params)
             if distance < min_distance:
                 best_value = n_mega_blocks
                 min_distance = distance
@@ -251,13 +262,13 @@ class TitaNet(nn.Module):
     @classmethod
     def get_titanet(
         cls,
-        loss_function,
         embedding_size=192,
         n_mels=80,
         n_mega_blocks=None,
         model_size="s",
         attention_hidden_size=128,
         simple_pool=False,
+        loss_function=None,
         dropout=0.5,
         device="cpu",
     ):
@@ -270,14 +281,15 @@ class TitaNet(nn.Module):
             "m",
             "l",
         ), "Unsupported model size"
-        assert isinstance(
-            loss_function, losses.MetricLearningLoss
+        assert (
+            isinstance(loss_function, losses.MetricLearningLoss)
+            or loss_function is None
         ), "Unsupported loss function"
 
         # Get the best number of mega blocks
         if n_mega_blocks is None:
             n_mega_blocks = cls.find_n_mega_blocks(
-                loss_function, embedding_size, n_mels, model_size
+                embedding_size, n_mels, model_size, loss_function=loss_function
             )
 
         # Assign parameters common to all model sizes
@@ -285,12 +297,12 @@ class TitaNet(nn.Module):
             TitaNet,
             n_mels=n_mels,
             n_mega_blocks=n_mega_blocks,
-            loss_function=loss_function,
             n_sub_blocks=3,
             encoder_output_size=1536,
             embedding_size=embedding_size,
             attention_hidden_size=attention_hidden_size,
             simple_pool=simple_pool,
+            loss_function=loss_function,
             dropout=dropout,
             device=device,
         )
@@ -315,8 +327,15 @@ class TitaNet(nn.Module):
         """
         encodings = self.encoder(spectrograms)
         embeddings = self.decoder(encodings)
+
+        # Inference mode
         if speakers is None:
             return F.normalize(embeddings, p=2, dim=1)
+
+        # Training mode
+        assert (
+            self.loss_function is not None
+        ), "Loss function should not be None in training mode"
         return self.loss_function(embeddings, speakers)
 
 

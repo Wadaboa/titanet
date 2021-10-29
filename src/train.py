@@ -1,10 +1,8 @@
-import sys
 from argparse import ArgumentParser
 from functools import partial
 
 import torch
 import torch.optim as optim
-import numpy as np
 import yaml
 
 import datasets, transforms, models, learn, losses, utils
@@ -89,7 +87,7 @@ def train(params):
     if params.dumb.enabled:
         model = models.DumbConvNet(
             params.audio.spectrogram.n_mels,
-            loss_function,
+            loss_function=loss_function,
             hidden_size=params.dumb.hidden_size,
             embedding_size=params.generic.embedding_size,
             n_layers=params.dumb.n_layers,
@@ -98,7 +96,7 @@ def train(params):
     elif params.baseline.enabled:
         model = models.DVectorBaseline(
             params.audio.spectrogram.n_mels,
-            loss_function,
+            loss_function=loss_function,
             n_lstm_layers=params.baseline.n_layers,
             hidden_size=params.baseline.hidden_size,
             lstm_average=params.baseline.average,
@@ -111,13 +109,13 @@ def train(params):
         if params.titanet.n_mega_blocks:
             n_mega_blocks = params.titanet.n_mega_blocks
         model = models.TitaNet.get_titanet(
-            loss_function,
             embedding_size=params.generic.embedding_size,
             n_mels=params.audio.spectrogram.n_mels,
             n_mega_blocks=n_mega_blocks,
             model_size=params.titanet.model_size,
             attention_hidden_size=params.titanet.attention_hidden_size,
             simple_pool=params.titanet.simple_pool,
+            loss_function=loss_function,
             dropout=params.titanet.dropout,
             device=device,
         )
