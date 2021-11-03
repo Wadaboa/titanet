@@ -410,6 +410,7 @@ def evaluate(
 def test(
     model,
     test_dataset,
+    indices=None,
     wandb_run=None,
     log_console=True,
     mindcf_p_target=0.01,
@@ -425,7 +426,7 @@ def test(
 
     # Get cosine similarity scores and labels
     samples = (
-        test_dataset.get_sample_pairs(device=device)
+        test_dataset.get_sample_pairs(indices=indices, device=device)
         if not isinstance(test_dataset, torch.utils.data.Subset)
         else test_dataset.dataset.get_sample_pairs(
             indices=test_dataset.indices, device=device
@@ -454,6 +455,8 @@ def test(
     # Log to wandb
     if wandb_run is not None:
         wandb_run.notes = json.dumps(metrics, indent=2).encode("utf-8")
+
+    return metrics
 
 
 def infer(

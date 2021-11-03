@@ -1,7 +1,7 @@
 # TitaNet
 
 <p align="center">
-	<img src="assets/titanet-architecture.png" alt="titanet-architecture" style="width: 450px;"/>
+	<img src="assets/models/titanet-architecture.png" alt="titanet-architecture" style="width: 450px;"/>
 </p>
 
 This repository contains a small scale implementation of the following paper:
@@ -40,7 +40,35 @@ python3 src/train.py -p "./parameters.yml"
 
 Training and evaluation metrics, along with model checkpoints and results, are directly logged into a W&B project, which is openly accessible [here](https://wandb.ai/wadaboa/titanet). In case you want to perform a custom training run, you have to either disable W&B (see `parameters.yml`) or provide your own entity (your username), project and API key file location in the `parameters.yml` file. The W&B API key file is a plain text file that contains a single line with your W&B API key, that you can get from [here](https://wandb.ai/authorize).
 
-## Results
+## Training & validation
+
+This section shows training and validation metrics observed for around 75 epochs. In case you want to see more metrics, please head over to the [W&B project](https://wandb.ai/wadaboa/titanet).
+
+### Baseline CE vs TitaNet CE
+
+This experiment compares training and validation loss and accuracy of the baseline and TitaNet models trained with cross-entropy loss. As we can see,  training metrics reach similar values, while validation metrics are much better with TitaNet. Moreover, plots suggest that the baseline model had a slight overfitting problem.
+
+Training Loss             |  Training Accuracy
+:-------------------------:|:-------------------------:
+![](assets/training/baseline-titanet-ce-train-loss.png)  |  ![](assets/training/baseline-titanet-ce-train-accuracy.png)
+
+Validation Loss             |  Validation Accuracy
+:-------------------------:|:-------------------------:
+![](assets/training/baseline-titanet-ce-val-loss.png)  |  ![](assets/training/baseline-titanet-ce-val-accuracy.png)
+
+### TitaNet CE vs TitaNet ArcFace
+
+This experiment compares training and validation loss and accuracy of two TitaNet models (model size "s"), trained with cross-entropy and ArcFace loss. The ArcFace parameters (scale and margin) are the ones specified in the original paper (30 and 0.2). As we can see, metrics are quite similar and no major differences can be observed.
+
+Training Loss             |  Training Accuracy
+:-------------------------:|:-------------------------:
+![](assets/training/titanet-ce-arc-train-loss.png)  |  ![](assets/training/titanet-ce-arc-train-accuracy.png)
+
+Validation Loss             |  Validation Accuracy
+:-------------------------:|:-------------------------:
+![](assets/training/titanet-ce-arc-val-loss.png)  |  ![](assets/training/titanet-ce-arc-val-accuracy.png)
+
+## Visualizations
 
 This section shows some visual results obtained after training each embedding model for around 75 epochs. Please note that all figures represent the same set of utterances, even though different figures use different colours for the same speaker.
 
@@ -50,7 +78,7 @@ This test compares the baseline and TitaNet models on the LibriSpeech dataset us
 
 Baseline             |  TitaNet
 :-------------------------:|:-------------------------:
-![](results/ls-baseline-ce-umap.png)  |  ![](results/ls-titanet-ce-umap.png)
+![](assets/visualization/ls-baseline-ce-umap.png)  |  ![](assets/visualization/ls-titanet-ce-umap.png)
 
 ### Baseline vs TitaNet on VCTK
 
@@ -58,15 +86,15 @@ This test compares the baseline and TitaNet models on the VCTK dataset, unseen d
 
 Baseline             |  TitaNet
 :-------------------------:|:-------------------------:
-![](results/vctk-baseline-ce-umap.png)  |  ![](results/vctk-titanet-ce-umap.png)
+![](assets/visualization/vctk-baseline-ce-umap.png)  |  ![](assets/visualization/vctk-titanet-ce-umap.png)
 
 ### SVD vs UMAP reduction
 
 This test compares two 2D reduction methods, namely SVD and UMAP. Both figures rely on the TitaNet model trained with cross-entropy loss. As we can see, the choice of the reduction method highly influences our subjective evaluation, with UMAP giving much better separation in the latent space.
 
-TitaNet LS SVD             |  TitaNet LS UMAP
+SVD             |  UMAP
 :-------------------------:|:-------------------------:
-![](results/ls-titanet-ce-svd.png)  |  ![](results/ls-titanet-ce-umap.png)
+![](assets/visualization/ls-titanet-ce-svd.png)  |  ![](assets/visualization/ls-titanet-ce-umap.png)
 
 ### Cross-entropy vs ArcFace loss
 
@@ -74,4 +102,4 @@ This test compares two TitaNet models, one trained with cross-entropy loss and t
 
 Cross-entropy           |  ArcFace
 :-------------------------:|:-------------------------:
-![](results/ls-titanet-ce-umap.png)  |  ![](results/ls-titanet-arc-umap.png)
+![](assets/visualization/ls-titanet-ce-umap.png)  |  ![](assets/visualization/ls-titanet-arc-umap.png)
