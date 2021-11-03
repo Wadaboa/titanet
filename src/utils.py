@@ -97,13 +97,8 @@ def visualize_embeddings(
         )
 
     # Store embeddings in a dataframe and compute cluster colors
-    embeddings_df = pd.DataFrame(
-        np.concatenate([embeddings, np.expand_dims(labels, axis=-1)], axis=-1),
-        columns=["x", "y", "l"],
-    )
-    embeddings_df.x = embeddings_df.x.astype(float)
-    embeddings_df.y = embeddings_df.y.astype(float)
-    embeddings_df.l = embeddings_df.l.astype(str)
+    embeddings_df = pd.DataFrame(embeddings, columns=["x", "y"], dtype=np.float32)
+    embeddings_df["l"] = np.expand_dims(labels, axis=-1)
     cluster_colors = {l: np.random.random(3) for l in np.unique(labels)}
     embeddings_df["c"] = embeddings_df.l.map(
         {l: tuple(c) for l, c in cluster_colors.items()}
@@ -120,6 +115,7 @@ def visualize_embeddings(
             color=c,
             label=f"{label} (C)",
             marker="^",
+            s=250,
         )
         if not only_centroids:
             ax.scatter(to_plot.x, to_plot.y, color=c, label=f"{label}")
