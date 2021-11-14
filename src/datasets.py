@@ -31,6 +31,7 @@ def get_dataloader(
         drop_last=False,
         generator=generator,
         persistent_workers=True,
+        drop_last=True,
     )
 
 
