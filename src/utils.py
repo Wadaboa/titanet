@@ -2,6 +2,8 @@ import random
 import datetime
 import os
 import string
+import hashlib
+import requests
 
 import torch
 import numpy as np
@@ -10,6 +12,7 @@ import matplotlib.pyplot as plt
 import IPython.display as ipd
 import wandb
 import umap
+from tqdm import tqdm
 from sklearn.manifold import TSNE
 from sklearn.decomposition import TruncatedSVD
 from scipy.spatial import ConvexHull
@@ -463,3 +466,40 @@ def chart_dependencies(model, n_mels=80, device="cpu"):
     ).all() and (
         inputs.grad[random_index] != 0
     ).any(), f"Only index {random_index} should have non-zero gradients"
+
+
+def download_auth_url_to_file(
+    url, file_path, username, password, hash_prefix=None, progress=True
+):
+    """
+    Download the file at the given URL using the given credentials,
+    and finally double check the checksum of the downloaded file
+    """
+    if hash_prefix is not None:
+        sha256 = hashlib.sha256()
+    response = requests.get(url, auth=(username, password), stream=True)
+    if response.status_code == 200:
+        file_size = int(response.headers.get("content-length", 0))
+        with open(file_path, "wb") as out:
+            with tqdm(
+                total=file_size,
+                disable=not progress,
+                unit="B",
+                unit_scale=True,
+                unit_divisor=1024,
+            ) as pbar:
+                for buffer in response.iter_content():
+                    out.write(buffer)
+                    if hash_prefix is not None:
+                        sha256.update(buffer)
+                    pbar.update(len(buffer))
+        if hash_prefix is not None:
+            digest = sha256.hexdigest()
+            if digest[: len(hash_prefix)] != hash_prefix:
+                raise RuntimeError(
+                    f'invalid hash value (expected "{hash_prefix}", got "{digest}")'
+                )
+        return True
+    raise RuntimeError(
+        f"Couldn't download from url {url}, got response status code {response.status_code}"
+    )

@@ -1,7 +1,8 @@
-torchaudio==0.9.0
+torchaudio==0.13.0
 pyyaml==5.4.1
 scikit-learn==1.0
 wandb==0.12.4
 rich==10.12.0
 umap-learn==0.5.1
 librosa==0.8.1
+joblib==1.1.0
